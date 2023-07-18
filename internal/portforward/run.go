@@ -62,8 +62,11 @@ func (l *Loop) Run(ctx context.Context, done chan<- struct{}) {
 		for stayHere {
 			select {
 			case <-ctx.Done():
+				l.logger.Debug("Done called")
 				pfCancel()
+				l.logger.Debug("Stopped?")
 				if stopped {
+					l.logger.Debug("Yes: stropped, returning")
 					return
 				}
 				<-errorCh
@@ -88,7 +91,9 @@ func (l *Loop) Run(ctx context.Context, done chan<- struct{}) {
 				l.removePortForwardedFile()
 				l.firewallBlockPort(ctx)
 				l.state.SetPortForwarded(0)
+				l.logger.Debug("l.stopped <- struct")
 				l.stopped <- struct{}{}
+				l.logger.Debug("stopped = true")
 				stopped = true
 			case port := <-portCh:
 				l.logger.Info("port forwarded is " + strconv.Itoa(int(port)))
