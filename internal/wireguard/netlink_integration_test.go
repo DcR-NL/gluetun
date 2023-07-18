@@ -1,27 +1,31 @@
-//go:build netlink
-// +build netlink
+//go:build netlink && linux
 
 package wireguard
 
 import (
-	"net"
+	"net/netip"
 	"testing"
 
 	"github.com/qdm12/gluetun/internal/netlink"
+	"github.com/qdm12/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 )
 
+type noopDebugLogger struct{}
+
+func (n noopDebugLogger) Debugf(format string, args ...any) {}
+func (n noopDebugLogger) Patch(options ...log.Option)       {}
+
 func Test_netlink_Wireguard_addAddresses(t *testing.T) {
 	t.Parallel()
 
-	netlinker := netlink.New()
+	netlinker := netlink.New(&noopDebugLogger{})
 
-	linkAttrs := netlink.NewLinkAttrs()
-	linkAttrs.Name = "test_8081"
-	link := &netlink.Bridge{
-		LinkAttrs: linkAttrs,
+	link := netlink.Link{
+		Type: "bridge",
+		Name: "test_8081",
 	}
 
 	// Remove any previously created test interface from a crashed/panic
@@ -31,45 +35,47 @@ func Test_netlink_Wireguard_addAddresses(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	err = netlinker.LinkAdd(link)
+	linkIndex, err := netlinker.LinkAdd(link)
 	require.NoError(t, err)
+	link.Index = linkIndex
 
 	defer func() {
 		err = netlinker.LinkDel(link)
 		assert.NoError(t, err)
 	}()
 
-	addresses := []*net.IPNet{
-		{IP: net.IP{1, 2, 3, 4}, Mask: net.IPv4Mask(255, 255, 255, 255)},
-		{IP: net.IP{5, 6, 7, 8}, Mask: net.IPv4Mask(255, 255, 255, 255)},
+	addresses := []netip.Prefix{
+		netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 32),
+		netip.PrefixFrom(netip.AddrFrom4([4]byte{5, 6, 7, 8}), 32),
 	}
 
 	wg := &Wireguard{
 		netlink: netlinker,
+		settings: Settings{
+			IPv6: new(bool),
+		},
 	}
 
-	// Success
-	err = wg.addAddresses(link, addresses)
-	require.NoError(t, err)
+	const addIterations = 2 // initial + replace
 
-	netlinkAddresses, err := netlinker.AddrList(link, netlink.FAMILY_ALL)
-	require.NoError(t, err)
-	require.Equal(t, len(addresses), len(netlinkAddresses))
-	for i, netlinkAddress := range netlinkAddresses {
-		ipNet := netlinkAddress.IPNet
-		assert.Equal(t, addresses[i], ipNet)
+	for i := 0; i < addIterations; i++ {
+		err = wg.addAddresses(link, addresses)
+		require.NoError(t, err)
+
+		netlinkAddresses, err := netlinker.AddrList(link, netlink.FamilyAll)
+		require.NoError(t, err)
+		require.Equal(t, len(addresses), len(netlinkAddresses))
+		for i, netlinkAddress := range netlinkAddresses {
+			require.NotNil(t, netlinkAddress.Network)
+			assert.Equal(t, addresses[i], netlinkAddress.Network)
+		}
 	}
-
-	// Existing address cannot be added
-	err = wg.addAddresses(link, addresses)
-	require.Error(t, err)
-	assert.EqualError(t, err, "file exists: when adding address 1.2.3.4/32 to link test_8081")
 }
 
 func Test_netlink_Wireguard_addRule(t *testing.T) {
 	t.Parallel()
 
-	netlinker := netlink.New()
+	netlinker := netlink.New(&noopDebugLogger{})
 	wg := &Wireguard{
 		netlink: netlinker,
 	}
@@ -86,7 +92,7 @@ func Test_netlink_Wireguard_addRule(t *testing.T) {
 		assert.NoError(t, err)
 	}()
 
-	rules, err := netlinker.RuleList(netlink.FAMILY_V4)
+	rules, err := netlinker.RuleList(netlink.FamilyV4)
 	require.NoError(t, err)
 	var rule netlink.Rule
 	var ruleFound bool
@@ -98,15 +104,10 @@ func Test_netlink_Wireguard_addRule(t *testing.T) {
 	}
 	require.True(t, ruleFound)
 	expectedRule := netlink.Rule{
-		Invert:            true,
-		Priority:          rulePriority,
-		Mark:              firewallMark,
-		Table:             firewallMark,
-		Mask:              4294967295,
-		Goto:              -1,
-		Flow:              -1,
-		SuppressIfgroup:   -1,
-		SuppressPrefixlen: -1,
+		Invert:   true,
+		Priority: rulePriority,
+		Mark:     firewallMark,
+		Table:    firewallMark,
 	}
 	assert.Equal(t, expectedRule, rule)
 
@@ -117,5 +118,5 @@ func Test_netlink_Wireguard_addRule(t *testing.T) {
 		_ = nilCleanup() // in case it succeeds
 	}
 	require.Error(t, err)
-	assert.Equal(t, "cannot add rule ip rule 10000: from all to all table 999: file exists", err.Error())
+	assert.EqualError(t, err, "adding rule ip rule 10000: from all to all table 999: file exists")
 }

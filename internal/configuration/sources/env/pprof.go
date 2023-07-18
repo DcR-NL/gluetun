@@ -1,28 +1,26 @@
 package env
 
 import (
-	"fmt"
-
 	"github.com/qdm12/gluetun/internal/pprof"
 )
 
-func readPprof() (settings pprof.Settings, err error) {
-	settings.Enabled, err = envToBoolPtr("PPROF_ENABLED")
+func (s *Source) readPprof() (settings pprof.Settings, err error) {
+	settings.Enabled, err = s.env.BoolPtr("PPROF_ENABLED")
 	if err != nil {
-		return settings, fmt.Errorf("environment variable PPROF_ENABLED: %w", err)
+		return settings, err
 	}
 
-	settings.BlockProfileRate, err = envToInt("PPROF_BLOCK_PROFILE_RATE")
+	settings.BlockProfileRate, err = s.env.IntPtr("PPROF_BLOCK_PROFILE_RATE")
 	if err != nil {
-		return settings, fmt.Errorf("environment variable PPROF_BLOCK_PROFILE_RATE: %w", err)
+		return settings, err
 	}
 
-	settings.MutexProfileRate, err = envToInt("PPROF_MUTEX_PROFILE_RATE")
+	settings.MutexProfileRate, err = s.env.IntPtr("PPROF_MUTEX_PROFILE_RATE")
 	if err != nil {
-		return settings, fmt.Errorf("environment variable PPROF_MUTEX_PROFILE_RATE: %w", err)
+		return settings, err
 	}
 
-	settings.HTTPServer.Address = getCleanedEnv("PPROF_HTTP_SERVER_ADDRESS")
+	settings.HTTPServer.Address = s.env.String("PPROF_HTTP_SERVER_ADDRESS")
 
 	return settings, nil
 }

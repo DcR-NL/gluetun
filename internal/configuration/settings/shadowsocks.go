@@ -1,7 +1,7 @@
 package settings
 
 import (
-	"github.com/qdm12/gluetun/internal/configuration/settings/helpers"
+	"github.com/qdm12/gosettings"
 	"github.com/qdm12/gotree"
 	"github.com/qdm12/ss-server/pkg/tcpudp"
 )
@@ -21,7 +21,7 @@ func (s Shadowsocks) validate() (err error) {
 
 func (s *Shadowsocks) copy() (copied Shadowsocks) {
 	return Shadowsocks{
-		Enabled:  helpers.CopyBoolPtr(s.Enabled),
+		Enabled:  gosettings.CopyPointer(s.Enabled),
 		Settings: s.Settings.Copy(),
 	}
 }
@@ -29,20 +29,20 @@ func (s *Shadowsocks) copy() (copied Shadowsocks) {
 // mergeWith merges the other settings into any
 // unset field of the receiver settings object.
 func (s *Shadowsocks) mergeWith(other Shadowsocks) {
-	s.Enabled = helpers.MergeWithBool(s.Enabled, other.Enabled)
-	s.Settings.MergeWith(other.Settings)
+	s.Enabled = gosettings.MergeWithPointer(s.Enabled, other.Enabled)
+	s.Settings = s.Settings.MergeWith(other.Settings)
 }
 
 // overrideWith overrides fields of the receiver
 // settings object with any field set in the other
 // settings.
 func (s *Shadowsocks) overrideWith(other Shadowsocks) {
-	s.Enabled = helpers.OverrideWithBool(s.Enabled, other.Enabled)
+	s.Enabled = gosettings.OverrideWithPointer(s.Enabled, other.Enabled)
 	s.Settings.OverrideWith(other.Settings)
 }
 
 func (s *Shadowsocks) setDefaults() {
-	s.Enabled = helpers.DefaultBool(s.Enabled, false)
+	s.Enabled = gosettings.DefaultPointer(s.Enabled, false)
 	s.Settings.SetDefaults()
 }
 
@@ -53,16 +53,16 @@ func (s Shadowsocks) String() string {
 func (s Shadowsocks) toLinesNode() (node *gotree.Node) {
 	node = gotree.New("Shadowsocks server settings:")
 
-	node.Appendf("Enabled: %s", helpers.BoolPtrToYesNo(s.Enabled))
+	node.Appendf("Enabled: %s", gosettings.BoolToYesNo(s.Enabled))
 	if !*s.Enabled {
 		return node
 	}
 
 	// TODO have ToLinesNode in qdm12/ss-server
-	node.Appendf("Listening address: %s", s.Address)
+	node.Appendf("Listening address: %s", *s.Address)
 	node.Appendf("Cipher: %s", s.CipherName)
-	node.Appendf("Password: %s", helpers.ObfuscatePassword(*s.Password))
-	node.Appendf("Log addresses: %s", helpers.BoolPtrToYesNo(s.LogAddresses))
+	node.Appendf("Password: %s", gosettings.ObfuscateKey(*s.Password))
+	node.Appendf("Log addresses: %s", gosettings.BoolToYesNo(s.LogAddresses))
 
 	return node
 }

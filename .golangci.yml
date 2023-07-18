@@ -29,6 +29,10 @@ issues:
     - text: "returns interface \\(github\\.com\\/vishvananda\\/netlink\\.Link\\)"
       linters:
         - ireturn
+    - path: "internal\\/openvpn\\/pkcs8\\/descbc\\.go"
+      text: "newCipherDESCBCBlock returns interface \\(github\\.com\\/youmark\\/pkcs8\\.Cipher\\)"
+      linters:
+        - ireturn
 
 linters:
   enable:
@@ -42,6 +46,7 @@ linters:
     - decorder
     - dogsled
     - dupl
+    - dupword
     - durationcheck
     - errchkjson
     - errname
@@ -50,6 +55,7 @@ linters:
     - exportloopref
     - forcetypeassert
     - gci
+    - gocheckcompilerdirectives
     - gochecknoglobals
     - gochecknoinits
     - gocognit
@@ -64,6 +70,7 @@ linters:
     - gomoddirectives
     - goprintffuncname
     - gosec
+    - gosmopolitan
     - grouper
     - importas
     - interfacebloat
@@ -71,7 +78,9 @@ linters:
     - lll
     - maintidx
     - makezero
+    - mirror
     - misspell
+    - musttag
     - nakedret
     - nestif
     - nilerr
@@ -79,6 +88,7 @@ linters:
     - noctx
     - nolintlint
     - nosprintfhostport
+    - paralleltest
     - prealloc
     - predeclared
     - promlinter
@@ -86,6 +96,7 @@ linters:
     - revive
     - rowserrcheck
     - sqlclosecheck
+    - tagalign
     - tenv
     - thelper
     - tparallel
@@ -94,6 +105,7 @@ linters:
     - usestdlibvars
     - wastedassign
     - whitespace
+    - zerologlint
 
 run:
   skip-dirs:

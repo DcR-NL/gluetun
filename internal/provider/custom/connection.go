@@ -15,7 +15,7 @@ var (
 )
 
 // GetConnection gets the connection from the OpenVPN configuration file.
-func (p *Provider) GetConnection(selection settings.ServerSelection, ipv6Supported bool) (
+func (p *Provider) GetConnection(selection settings.ServerSelection, _ bool) (
 	connection models.Connection, err error) {
 	switch selection.VPN {
 	case vpn.OpenVPN:
@@ -32,7 +32,7 @@ func getOpenVPNConnection(extractor Extractor,
 	connection models.Connection, err error) {
 	_, connection, err = extractor.Data(*selection.OpenVPN.ConfFile)
 	if err != nil {
-		return connection, fmt.Errorf("cannot extract connection: %w", err)
+		return connection, fmt.Errorf("extracting connection: %w", err)
 	}
 
 	customPort := *selection.OpenVPN.CustomPort

@@ -1,8 +1,8 @@
-ARG ALPINE_VERSION=3.16
-ARG GO_ALPINE_VERSION=3.16
-ARG GO_VERSION=1.19
+ARG ALPINE_VERSION=3.18
+ARG GO_ALPINE_VERSION=3.18
+ARG GO_VERSION=1.20
 ARG XCPUTRANSLATE_VERSION=v0.6.0
-ARG GOLANGCI_LINT_VERSION=v1.49.0
+ARG GOLANGCI_LINT_VERSION=v1.53.2
 ARG MOCKGEN_VERSION=v1.6.0
 ARG BUILDPLATFORM=linux/amd64
 
@@ -90,13 +90,16 @@ ENV VPN_SERVICE_PROVIDER=pia \
     OPENVPN_FLAGS= \
     OPENVPN_CIPHERS= \
     OPENVPN_AUTH= \
-    OPENVPN_PROCESS_USER= \
+    OPENVPN_PROCESS_USER=root \
     OPENVPN_CUSTOM_CONFIG= \
     # Wireguard
     WIREGUARD_PRIVATE_KEY= \
     WIREGUARD_PRESHARED_KEY= \
     WIREGUARD_PUBLIC_KEY= \
+    WIREGUARD_ALLOWED_IPS= \
     WIREGUARD_ADDRESSES= \
+    WIREGUARD_MTU=1400 \
+    WIREGUARD_IMPLEMENTATION=auto \
     # VPN server filtering
     SERVER_REGIONS= \
     SERVER_COUNTRIES= \
@@ -107,8 +110,9 @@ ENV VPN_SERVICE_PROVIDER=pia \
     OWNED_ONLY=no \
     # # Private Internet Access only:
     PRIVATE_INTERNET_ACCESS_OPENVPN_ENCRYPTION_PRESET= \
-    PRIVATE_INTERNET_ACCESS_VPN_PORT_FORWARDING=off \
-    PRIVATE_INTERNET_ACCESS_VPN_PORT_FORWARDING_STATUS_FILE="/tmp/gluetun/forwarded_port" \
+    VPN_PORT_FORWARDING=off \
+    VPN_PORT_FORWARDING_PROVIDER= \
+    VPN_PORT_FORWARDING_STATUS_FILE="/tmp/gluetun/forwarded_port" \
     # # Cyberghost only:
     OPENVPN_CERT= \
     OPENVPN_KEY= \
@@ -140,6 +144,7 @@ ENV VPN_SERVICE_PROVIDER=pia \
     # Health
     HEALTH_SERVER_ADDRESS=127.0.0.1:9999 \
     HEALTH_TARGET_ADDRESS=cloudflare.com:443 \
+    HEALTH_SUCCESS_WAIT_DURATION=5s \
     HEALTH_VPN_DURATION_INITIAL=6s \
     HEALTH_VPN_DURATION_ADDITION=5s \
     # DNS over TLS
@@ -162,6 +167,7 @@ ENV VPN_SERVICE_PROVIDER=pia \
     HTTPPROXY= \
     HTTPPROXY_LOG=off \
     HTTPPROXY_LISTENING_ADDRESS=":8888" \
+    HTTPPROXY_STEALTH=off \
     HTTPPROXY_USER= \
     HTTPPROXY_PASSWORD= \
     HTTPPROXY_USER_SECRETFILE=/run/secrets/httpproxy_user \
@@ -174,6 +180,7 @@ ENV VPN_SERVICE_PROVIDER=pia \
     SHADOWSOCKS_PASSWORD_SECRETFILE=/run/secrets/shadowsocks_password \
     SHADOWSOCKS_CIPHER=chacha20-ietf-poly1305 \
     # Control server
+    HTTP_CONTROL_SERVER_LOG=on \
     HTTP_CONTROL_SERVER_ADDRESS=":8000" \
     # Server data updater
     UPDATER_PERIOD=0 \
@@ -196,12 +203,12 @@ ENTRYPOINT ["/gluetun-entrypoint"]
 EXPOSE 8000/tcp 8888/tcp 8388/tcp 8388/udp
 HEALTHCHECK --interval=5s --timeout=5s --start-period=10s --retries=1 CMD /gluetun-entrypoint healthcheck
 ARG TARGETPLATFORM
-RUN apk add --no-cache --update -l apk-tools && \
-    apk add --no-cache --update -X "https://dl-cdn.alpinelinux.org/alpine/v3.12/main" openvpn==2.4.12-r0 && \
-    mv /usr/sbin/openvpn /usr/sbin/openvpn2.4 && \
+RUN apk add --no-cache --update -l wget && \
+    apk add --no-cache --update -X "https://dl-cdn.alpinelinux.org/alpine/v3.17/main" openvpn\~2.5 && \
+    mv /usr/sbin/openvpn /usr/sbin/openvpn2.5 && \
     apk del openvpn && \
     apk add --no-cache --update openvpn ca-certificates iptables ip6tables unbound tzdata && \
-    mv /usr/sbin/openvpn /usr/sbin/openvpn2.5 && \
+    mv /usr/sbin/openvpn /usr/sbin/openvpn2.6 && \
     # Fix vulnerability issue
     apk add --no-cache --update busybox && \
     rm -rf /var/cache/apk/* /etc/unbound/* /usr/sbin/unbound-* /etc/openvpn/*.sh /usr/lib/openvpn/plugins/openvpn-plugin-down-root.so && \

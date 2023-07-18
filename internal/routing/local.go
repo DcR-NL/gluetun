@@ -3,9 +3,10 @@ package routing
 import (
 	"errors"
 	"fmt"
-	"net"
+	"net/netip"
 
 	"github.com/qdm12/gluetun/internal/netlink"
+	"golang.org/x/sys/unix"
 )
 
 var (
@@ -15,39 +16,39 @@ var (
 )
 
 type LocalNetwork struct {
-	IPNet         *net.IPNet
+	IPNet         netip.Prefix
 	InterfaceName string
-	IP            net.IP
+	IP            netip.Addr
 }
 
 func (r *Routing) LocalNetworks() (localNetworks []LocalNetwork, err error) {
 	links, err := r.netLinker.LinkList()
 	if err != nil {
-		return localNetworks, fmt.Errorf("cannot list links: %w", err)
+		return localNetworks, fmt.Errorf("listing links: %w", err)
 	}
 
 	localLinks := make(map[int]struct{})
 
 	for _, link := range links {
-		if link.Attrs().EncapType != "ether" {
+		if link.EncapType != "ether" {
 			continue
 		}
 
-		localLinks[link.Attrs().Index] = struct{}{}
-		r.logger.Info("local ethernet link found: " + link.Attrs().Name)
+		localLinks[link.Index] = struct{}{}
+		r.logger.Info("local ethernet link found: " + link.Name)
 	}
 
 	if len(localLinks) == 0 {
 		return localNetworks, fmt.Errorf("%w: in %d links", ErrLinkLocalNotFound, len(links))
 	}
 
-	routes, err := r.netLinker.RouteList(nil, netlink.FAMILY_ALL)
+	routes, err := r.netLinker.RouteList(netlink.FamilyAll)
 	if err != nil {
-		return localNetworks, fmt.Errorf("cannot list routes: %w", err)
+		return localNetworks, fmt.Errorf("listing routes: %w", err)
 	}
 
 	for _, route := range routes {
-		if route.Gw != nil || route.Dst == nil {
+		if route.Table != unix.RT_TABLE_MAIN || route.Gw.IsValid() || !route.Dst.IsValid() {
 			continue
 		} else if _, ok := localLinks[route.LinkIndex]; !ok {
 			continue
@@ -60,14 +61,14 @@ func (r *Routing) LocalNetworks() (localNetworks []LocalNetwork, err error) {
 
 		link, err := r.netLinker.LinkByIndex(route.LinkIndex)
 		if err != nil {
-			return localNetworks, fmt.Errorf("cannot find link at index %d: %w", route.LinkIndex, err)
+			return localNetworks, fmt.Errorf("finding link at index %d: %w", route.LinkIndex, err)
 		}
 
-		localNet.InterfaceName = link.Attrs().Name
+		localNet.InterfaceName = link.Name
 
-		family := netlink.FAMILY_V6
-		if localNet.IPNet.IP.To4() != nil {
-			family = netlink.FAMILY_V4
+		family := netlink.FamilyV6
+		if localNet.IPNet.Addr().Is4() {
+			family = netlink.FamilyV4
 		}
 		ip, err := r.assignedIP(localNet.InterfaceName, family)
 		if err != nil {
@@ -84,4 +85,23 @@ func (r *Routing) LocalNetworks() (localNetworks []LocalNetwork, err error) {
 	}
 
 	return localNetworks, nil
+}
+
+func (r *Routing) AddLocalRules(subnets []LocalNetwork) (err error) {
+	for _, subnet := range subnets {
+		// The main table is a built-in value for Linux, see "man 8 ip-route"
+		const mainTable = 254
+
+		// Local has higher priority then outbound(99) and inbound(100) as the
+		// local routes might be necessary to reach the outbound/inbound routes.
+		const localPriority = 98
+
+		// Main table was setup correctly by Docker, just need to add rules to use it
+		src := netip.Prefix{}
+		err = r.addIPRule(src, subnet.IPNet, mainTable, localPriority)
+		if err != nil {
+			return fmt.Errorf("adding rule: %v: %w", subnet.IPNet, err)
+		}
+	}
+	return nil
 }

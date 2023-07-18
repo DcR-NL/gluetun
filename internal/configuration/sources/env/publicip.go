@@ -1,42 +1,18 @@
 package env
 
 import (
-	"fmt"
-	"time"
-
 	"github.com/qdm12/gluetun/internal/configuration/settings"
+	"github.com/qdm12/gosettings/sources/env"
 )
 
 func (s *Source) readPublicIP() (publicIP settings.PublicIP, err error) {
-	publicIP.Period, err = readPublicIPPeriod()
+	publicIP.Period, err = s.env.DurationPtr("PUBLICIP_PERIOD")
 	if err != nil {
 		return publicIP, err
 	}
 
-	publicIP.IPFilepath = s.readPublicIPFilepath()
+	publicIP.IPFilepath = s.env.Get("PUBLICIP_FILE",
+		env.ForceLowercase(false), env.RetroKeys("IP_STATUS_FILE"))
 
 	return publicIP, nil
-}
-
-func readPublicIPPeriod() (period *time.Duration, err error) {
-	s := getCleanedEnv("PUBLICIP_PERIOD")
-	if s == "" {
-		return nil, nil //nolint:nilnil
-	}
-
-	period = new(time.Duration)
-	*period, err = time.ParseDuration(s)
-	if err != nil {
-		return nil, fmt.Errorf("environment variable PUBLICIP_PERIOD: %w", err)
-	}
-
-	return period, nil
-}
-
-func (s *Source) readPublicIPFilepath() (filepath *string) {
-	_, value := s.getEnvWithRetro("PUBLICIP_FILE", "IP_STATUS_FILE")
-	if value != "" {
-		return &value
-	}
-	return nil
 }

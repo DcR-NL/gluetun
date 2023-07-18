@@ -3,25 +3,24 @@ package settings
 import (
 	"errors"
 	"fmt"
-	"net"
+	"net/netip"
 
 	"github.com/qdm12/dns/pkg/provider"
 	"github.com/qdm12/dns/pkg/unbound"
-	"github.com/qdm12/gluetun/internal/configuration/settings/helpers"
+	"github.com/qdm12/gosettings"
 	"github.com/qdm12/gotree"
-	"inet.af/netaddr"
 )
 
 // Unbound is settings for the Unbound program.
 type Unbound struct {
-	Providers             []string
-	Caching               *bool
-	IPv6                  *bool
-	VerbosityLevel        *uint8
-	VerbosityDetailsLevel *uint8
-	ValidationLogLevel    *uint8
-	Username              string
-	Allowed               []netaddr.IPPrefix
+	Providers             []string       `json:"providers"`
+	Caching               *bool          `json:"caching"`
+	IPv6                  *bool          `json:"ipv6"`
+	VerbosityLevel        *uint8         `json:"verbosity_level"`
+	VerbosityDetailsLevel *uint8         `json:"verbosity_details_level"`
+	ValidationLogLevel    *uint8         `json:"validation_log_level"`
+	Username              string         `json:"username"`
+	Allowed               []netip.Prefix `json:"allowed"`
 }
 
 func (u *Unbound) setDefaults() {
@@ -31,26 +30,26 @@ func (u *Unbound) setDefaults() {
 		}
 	}
 
-	u.Caching = helpers.DefaultBool(u.Caching, true)
-	u.IPv6 = helpers.DefaultBool(u.IPv6, false)
+	u.Caching = gosettings.DefaultPointer(u.Caching, true)
+	u.IPv6 = gosettings.DefaultPointer(u.IPv6, false)
 
 	const defaultVerbosityLevel = 1
-	u.VerbosityLevel = helpers.DefaultUint8(u.VerbosityLevel, defaultVerbosityLevel)
+	u.VerbosityLevel = gosettings.DefaultPointer(u.VerbosityLevel, defaultVerbosityLevel)
 
 	const defaultVerbosityDetailsLevel = 0
-	u.VerbosityDetailsLevel = helpers.DefaultUint8(u.VerbosityDetailsLevel, defaultVerbosityDetailsLevel)
+	u.VerbosityDetailsLevel = gosettings.DefaultPointer(u.VerbosityDetailsLevel, defaultVerbosityDetailsLevel)
 
 	const defaultValidationLogLevel = 0
-	u.ValidationLogLevel = helpers.DefaultUint8(u.ValidationLogLevel, defaultValidationLogLevel)
+	u.ValidationLogLevel = gosettings.DefaultPointer(u.ValidationLogLevel, defaultValidationLogLevel)
 
 	if u.Allowed == nil {
-		u.Allowed = []netaddr.IPPrefix{
-			netaddr.IPPrefixFrom(netaddr.IPv4(0, 0, 0, 0), 0),
-			netaddr.IPPrefixFrom(netaddr.IPv6Raw([16]byte{}), 0),
+		u.Allowed = []netip.Prefix{
+			netip.PrefixFrom(netip.AddrFrom4([4]byte{}), 0),
+			netip.PrefixFrom(netip.AddrFrom16([16]byte{}), 0),
 		}
 	}
 
-	u.Username = helpers.DefaultString(u.Username, "root")
+	u.Username = gosettings.DefaultString(u.Username, "root")
 }
 
 var (
@@ -95,37 +94,37 @@ func (u Unbound) validate() (err error) {
 
 func (u Unbound) copy() (copied Unbound) {
 	return Unbound{
-		Providers:             helpers.CopyStringSlice(u.Providers),
-		Caching:               helpers.CopyBoolPtr(u.Caching),
-		IPv6:                  helpers.CopyBoolPtr(u.IPv6),
-		VerbosityLevel:        helpers.CopyUint8Ptr(u.VerbosityLevel),
-		VerbosityDetailsLevel: helpers.CopyUint8Ptr(u.VerbosityDetailsLevel),
-		ValidationLogLevel:    helpers.CopyUint8Ptr(u.ValidationLogLevel),
+		Providers:             gosettings.CopySlice(u.Providers),
+		Caching:               gosettings.CopyPointer(u.Caching),
+		IPv6:                  gosettings.CopyPointer(u.IPv6),
+		VerbosityLevel:        gosettings.CopyPointer(u.VerbosityLevel),
+		VerbosityDetailsLevel: gosettings.CopyPointer(u.VerbosityDetailsLevel),
+		ValidationLogLevel:    gosettings.CopyPointer(u.ValidationLogLevel),
 		Username:              u.Username,
-		Allowed:               helpers.CopyIPPrefixSlice(u.Allowed),
+		Allowed:               gosettings.CopySlice(u.Allowed),
 	}
 }
 
 func (u *Unbound) mergeWith(other Unbound) {
-	u.Providers = helpers.MergeStringSlices(u.Providers, other.Providers)
-	u.Caching = helpers.MergeWithBool(u.Caching, other.Caching)
-	u.IPv6 = helpers.MergeWithBool(u.IPv6, other.IPv6)
-	u.VerbosityLevel = helpers.MergeWithUint8(u.VerbosityLevel, other.VerbosityLevel)
-	u.VerbosityDetailsLevel = helpers.MergeWithUint8(u.VerbosityDetailsLevel, other.VerbosityDetailsLevel)
-	u.ValidationLogLevel = helpers.MergeWithUint8(u.ValidationLogLevel, other.ValidationLogLevel)
-	u.Username = helpers.MergeWithString(u.Username, other.Username)
-	u.Allowed = helpers.MergeIPPrefixesSlices(u.Allowed, other.Allowed)
+	u.Providers = gosettings.MergeWithSlice(u.Providers, other.Providers)
+	u.Caching = gosettings.MergeWithPointer(u.Caching, other.Caching)
+	u.IPv6 = gosettings.MergeWithPointer(u.IPv6, other.IPv6)
+	u.VerbosityLevel = gosettings.MergeWithPointer(u.VerbosityLevel, other.VerbosityLevel)
+	u.VerbosityDetailsLevel = gosettings.MergeWithPointer(u.VerbosityDetailsLevel, other.VerbosityDetailsLevel)
+	u.ValidationLogLevel = gosettings.MergeWithPointer(u.ValidationLogLevel, other.ValidationLogLevel)
+	u.Username = gosettings.MergeWithString(u.Username, other.Username)
+	u.Allowed = gosettings.MergeWithSlice(u.Allowed, other.Allowed)
 }
 
 func (u *Unbound) overrideWith(other Unbound) {
-	u.Providers = helpers.OverrideWithStringSlice(u.Providers, other.Providers)
-	u.Caching = helpers.OverrideWithBool(u.Caching, other.Caching)
-	u.IPv6 = helpers.OverrideWithBool(u.IPv6, other.IPv6)
-	u.VerbosityLevel = helpers.OverrideWithUint8(u.VerbosityLevel, other.VerbosityLevel)
-	u.VerbosityDetailsLevel = helpers.OverrideWithUint8(u.VerbosityDetailsLevel, other.VerbosityDetailsLevel)
-	u.ValidationLogLevel = helpers.OverrideWithUint8(u.ValidationLogLevel, other.ValidationLogLevel)
-	u.Username = helpers.OverrideWithString(u.Username, other.Username)
-	u.Allowed = helpers.OverrideWithIPPrefixesSlice(u.Allowed, other.Allowed)
+	u.Providers = gosettings.OverrideWithSlice(u.Providers, other.Providers)
+	u.Caching = gosettings.OverrideWithPointer(u.Caching, other.Caching)
+	u.IPv6 = gosettings.OverrideWithPointer(u.IPv6, other.IPv6)
+	u.VerbosityLevel = gosettings.OverrideWithPointer(u.VerbosityLevel, other.VerbosityLevel)
+	u.VerbosityDetailsLevel = gosettings.OverrideWithPointer(u.VerbosityDetailsLevel, other.VerbosityDetailsLevel)
+	u.ValidationLogLevel = gosettings.OverrideWithPointer(u.ValidationLogLevel, other.ValidationLogLevel)
+	u.Username = gosettings.OverrideWithString(u.Username, other.Username)
+	u.Allowed = gosettings.OverrideWithSlice(u.Allowed, other.Allowed)
 }
 
 func (u Unbound) ToUnboundFormat() (settings unbound.Settings, err error) {
@@ -149,20 +148,30 @@ func (u Unbound) ToUnboundFormat() (settings unbound.Settings, err error) {
 		VerbosityDetailsLevel: *u.VerbosityDetailsLevel,
 		ValidationLogLevel:    *u.ValidationLogLevel,
 		AccessControl: unbound.AccessControlSettings{
-			Allowed: u.Allowed,
+			Allowed: netipPrefixesToNetaddrIPPrefixes(u.Allowed),
 		},
 		Username: u.Username,
 	}, nil
 }
 
-func (u Unbound) GetFirstPlaintextIPv4() (ipv4 net.IP, err error) {
+var (
+	ErrConvertingNetip = errors.New("converting net.IP to netip.Addr failed")
+)
+
+func (u Unbound) GetFirstPlaintextIPv4() (ipv4 netip.Addr, err error) {
 	s := u.Providers[0]
 	provider, err := provider.Parse(s)
 	if err != nil {
-		return nil, err
+		return ipv4, err
 	}
 
-	return provider.DNS().IPv4[0], nil
+	ip := provider.DNS().IPv4[0]
+	ipv4, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return ipv4, fmt.Errorf("%w: for ip %s (%#v)",
+			ErrConvertingNetip, ip, ip)
+	}
+	return ipv4.Unmap(), nil
 }
 
 func (u Unbound) String() string {
@@ -177,8 +186,8 @@ func (u Unbound) toLinesNode() (node *gotree.Node) {
 		authServers.Appendf(provider)
 	}
 
-	node.Appendf("Caching: %s", helpers.BoolPtrToYesNo(u.Caching))
-	node.Appendf("IPv6: %s", helpers.BoolPtrToYesNo(u.IPv6))
+	node.Appendf("Caching: %s", gosettings.BoolToYesNo(u.Caching))
+	node.Appendf("IPv6: %s", gosettings.BoolToYesNo(u.IPv6))
 	node.Appendf("Verbosity level: %d", *u.VerbosityLevel)
 	node.Appendf("Verbosity details level: %d", *u.VerbosityDetailsLevel)
 	node.Appendf("Validation log level: %d", *u.ValidationLogLevel)

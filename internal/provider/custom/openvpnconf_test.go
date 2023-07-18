@@ -1,7 +1,7 @@
 package custom
 
 import (
-	"net"
+	"net/netip"
 	"testing"
 
 	"github.com/qdm12/gluetun/internal/configuration/settings"
@@ -39,14 +39,14 @@ func Test_modifyConfig(t *testing.T) {
 			settings: settings.OpenVPN{
 				User:        stringPtr("user"),
 				Ciphers:     []string{"cipher"},
-				Auth:        stringPtr("auth"),
+				Auth:        stringPtr("sha512"),
 				MSSFix:      uint16Ptr(1000),
 				ProcessUser: "procuser",
 				Interface:   "tun3",
 				Verbosity:   intPtr(0),
 			}.WithDefaults(providers.Custom),
 			connection: models.Connection{
-				IP:       net.IPv4(1, 2, 3, 4),
+				IP:       netip.AddrFrom4([4]byte{1, 2, 3, 4}),
 				Port:     1194,
 				Protocol: constants.UDP,
 			},
@@ -66,7 +66,7 @@ func Test_modifyConfig(t *testing.T) {
 				"verb 0",
 				"data-ciphers-fallback cipher",
 				"data-ciphers cipher",
-				"auth auth",
+				"auth sha512",
 				"mssfix 1000",
 				"pull-filter ignore \"route-ipv6\"",
 				"pull-filter ignore \"ifconfig-ipv6\"",

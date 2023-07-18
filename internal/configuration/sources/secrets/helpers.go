@@ -2,35 +2,24 @@ package secrets
 
 import (
 	"fmt"
-	"os"
-	"strings"
 
 	"github.com/qdm12/gluetun/internal/configuration/sources/files"
 	"github.com/qdm12/gluetun/internal/openvpn/extract"
+	"github.com/qdm12/gosettings/sources/env"
 )
 
-// getCleanedEnv returns an environment variable value with
-// surrounding spaces and trailing new line characters removed.
-func getCleanedEnv(envKey string) (value string) {
-	value = os.Getenv(envKey)
-	value = strings.TrimSpace(value)
-	value = strings.TrimSuffix(value, "\r\n")
-	value = strings.TrimSuffix(value, "\n")
-	return value
-}
-
-func readSecretFileAsStringPtr(secretPathEnvKey, defaultSecretPath string) (
+func (s *Source) readSecretFileAsStringPtr(secretPathEnvKey, defaultSecretPath string) (
 	stringPtr *string, err error) {
-	path := getCleanedEnv(secretPathEnvKey)
+	path := s.env.String(secretPathEnvKey, env.ForceLowercase(false))
 	if path == "" {
 		path = defaultSecretPath
 	}
 	return files.ReadFromFile(path)
 }
 
-func readPEMSecretFile(secretPathEnvKey, defaultSecretPath string) (
+func (s *Source) readPEMSecretFile(secretPathEnvKey, defaultSecretPath string) (
 	base64Ptr *string, err error) {
-	pemData, err := readSecretFileAsStringPtr(secretPathEnvKey, defaultSecretPath)
+	pemData, err := s.readSecretFileAsStringPtr(secretPathEnvKey, defaultSecretPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading secret file: %w", err)
 	}

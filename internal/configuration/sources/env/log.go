@@ -9,8 +9,8 @@ import (
 	"github.com/qdm12/log"
 )
 
-func readLog() (log settings.Log, err error) {
-	log.Level, err = readLogLevel()
+func (s *Source) readLog() (log settings.Log, err error) {
+	log.Level, err = s.readLogLevel()
 	if err != nil {
 		return log, err
 	}
@@ -18,14 +18,14 @@ func readLog() (log settings.Log, err error) {
 	return log, nil
 }
 
-func readLogLevel() (level *log.Level, err error) {
-	s := getCleanedEnv("LOG_LEVEL")
-	if s == "" {
+func (s *Source) readLogLevel() (level *log.Level, err error) {
+	value := s.env.String("LOG_LEVEL")
+	if value == "" {
 		return nil, nil //nolint:nilnil
 	}
 
 	level = new(log.Level)
-	*level, err = parseLogLevel(s)
+	*level, err = parseLogLevel(value)
 	if err != nil {
 		return nil, fmt.Errorf("environment variable LOG_LEVEL: %w", err)
 	}

@@ -2,10 +2,11 @@ package settings
 
 import (
 	"fmt"
-	"net"
+	"net/netip"
 
-	"github.com/qdm12/gluetun/internal/configuration/settings/helpers"
 	"github.com/qdm12/gluetun/internal/constants/providers"
+	"github.com/qdm12/gosettings"
+	"github.com/qdm12/gosettings/validate"
 	"github.com/qdm12/gotree"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
@@ -15,20 +16,20 @@ type WireguardSelection struct {
 	// It is only used with VPN providers generating Wireguard
 	// configurations specific to each server and user.
 	// To indicate it should not be used, it should be set
-	// to the empty net.IP{} slice. It can never be nil
+	// to netip.IPv4Unspecified(). It can never be the zero value
 	// in the internal state.
-	EndpointIP net.IP
+	EndpointIP netip.Addr `json:"endpoint_ip"`
 	// EndpointPort is a the server port to use for the VPN server.
 	// It is optional for VPN providers IVPN, Mullvad, Surfshark
 	// and Windscribe, and compulsory for the others.
 	// When optional, it can be set to 0 to indicate not use
 	// a custom endpoint port. It cannot be nil in the internal
 	// state.
-	EndpointPort *uint16
+	EndpointPort *uint16 `json:"endpoint_port"`
 	// PublicKey is the server public key.
 	// It is only used with VPN providers generating Wireguard
 	// configurations specific to each server and user.
-	PublicKey string
+	PublicKey string `json:"public_key"`
 }
 
 // Validate validates WireguardSelection settings.
@@ -37,11 +38,11 @@ func (w WireguardSelection) validate(vpnProvider string) (err error) {
 	// Validate EndpointIP
 	switch vpnProvider {
 	case providers.Airvpn, providers.Ivpn, providers.Mullvad,
-		providers.Surfshark, providers.Windscribe:
+		providers.Nordvpn, providers.Surfshark, providers.Windscribe:
 		// endpoint IP addresses are baked in
 	case providers.Custom:
-		if len(w.EndpointIP) == 0 {
-			return ErrWireguardEndpointIPNotSet
+		if !w.EndpointIP.IsValid() || w.EndpointIP.IsUnspecified() {
+			return fmt.Errorf("%w", ErrWireguardEndpointIPNotSet)
 		}
 	default: // Providers not supporting Wireguard
 	}
@@ -51,12 +52,12 @@ func (w WireguardSelection) validate(vpnProvider string) (err error) {
 	// EndpointPort is required
 	case providers.Custom:
 		if *w.EndpointPort == 0 {
-			return ErrWireguardEndpointPortNotSet
+			return fmt.Errorf("%w", ErrWireguardEndpointPortNotSet)
 		}
 	// EndpointPort cannot be set
-	case providers.Surfshark:
+	case providers.Surfshark, providers.Nordvpn:
 		if *w.EndpointPort != 0 {
-			return ErrWireguardEndpointPortSet
+			return fmt.Errorf("%w", ErrWireguardEndpointPortSet)
 		}
 	case providers.Airvpn, providers.Ivpn, providers.Mullvad, providers.Windscribe:
 		// EndpointPort is optional and can be 0
@@ -76,12 +77,12 @@ func (w WireguardSelection) validate(vpnProvider string) (err error) {
 			allowed = []uint16{53, 80, 123, 443, 1194, 65142}
 		}
 
-		if helpers.Uint16IsOneOf(*w.EndpointPort, allowed) {
+		err = validate.IsOneOf(*w.EndpointPort, allowed...)
+		if err == nil {
 			break
 		}
-		return fmt.Errorf("%w: %d for VPN service provider %s; %s",
-			ErrWireguardEndpointPortNotAllowed, w.EndpointPort, vpnProvider,
-			helpers.PortChoicesOrString(allowed))
+		return fmt.Errorf("%w: for VPN service provider %s: %w",
+			ErrWireguardEndpointPortNotAllowed, vpnProvider, err)
 	default: // Providers not supporting Wireguard
 	}
 
@@ -92,7 +93,7 @@ func (w WireguardSelection) validate(vpnProvider string) (err error) {
 		// public keys are baked in
 	case providers.Custom:
 		if w.PublicKey == "" {
-			return ErrWireguardPublicKeyNotSet
+			return fmt.Errorf("%w", ErrWireguardPublicKeyNotSet)
 		}
 	default: // Providers not supporting Wireguard
 	}
@@ -109,27 +110,27 @@ func (w WireguardSelection) validate(vpnProvider string) (err error) {
 
 func (w *WireguardSelection) copy() (copied WireguardSelection) {
 	return WireguardSelection{
-		EndpointIP:   helpers.CopyIP(w.EndpointIP),
-		EndpointPort: helpers.CopyUint16Ptr(w.EndpointPort),
+		EndpointIP:   w.EndpointIP,
+		EndpointPort: gosettings.CopyPointer(w.EndpointPort),
 		PublicKey:    w.PublicKey,
 	}
 }
 
 func (w *WireguardSelection) mergeWith(other WireguardSelection) {
-	w.EndpointIP = helpers.MergeWithIP(w.EndpointIP, other.EndpointIP)
-	w.EndpointPort = helpers.MergeWithUint16(w.EndpointPort, other.EndpointPort)
-	w.PublicKey = helpers.MergeWithString(w.PublicKey, other.PublicKey)
+	w.EndpointIP = gosettings.MergeWithValidator(w.EndpointIP, other.EndpointIP)
+	w.EndpointPort = gosettings.MergeWithPointer(w.EndpointPort, other.EndpointPort)
+	w.PublicKey = gosettings.MergeWithString(w.PublicKey, other.PublicKey)
 }
 
 func (w *WireguardSelection) overrideWith(other WireguardSelection) {
-	w.EndpointIP = helpers.OverrideWithIP(w.EndpointIP, other.EndpointIP)
-	w.EndpointPort = helpers.OverrideWithUint16(w.EndpointPort, other.EndpointPort)
-	w.PublicKey = helpers.OverrideWithString(w.PublicKey, other.PublicKey)
+	w.EndpointIP = gosettings.OverrideWithValidator(w.EndpointIP, other.EndpointIP)
+	w.EndpointPort = gosettings.OverrideWithPointer(w.EndpointPort, other.EndpointPort)
+	w.PublicKey = gosettings.OverrideWithString(w.PublicKey, other.PublicKey)
 }
 
 func (w *WireguardSelection) setDefaults() {
-	w.EndpointIP = helpers.DefaultIP(w.EndpointIP, net.IP{})
-	w.EndpointPort = helpers.DefaultUint16(w.EndpointPort, 0)
+	w.EndpointIP = gosettings.DefaultValidator(w.EndpointIP, netip.IPv4Unspecified())
+	w.EndpointPort = gosettings.DefaultPointer(w.EndpointPort, 0)
 }
 
 func (w WireguardSelection) String() string {
@@ -139,7 +140,7 @@ func (w WireguardSelection) String() string {
 func (w WireguardSelection) toLinesNode() (node *gotree.Node) {
 	node = gotree.New("Wireguard selection settings:")
 
-	if len(w.EndpointIP) > 0 {
+	if !w.EndpointIP.IsUnspecified() {
 		node.Appendf("Endpoint IP address: %s", w.EndpointIP)
 	}
 

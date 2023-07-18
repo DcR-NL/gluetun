@@ -29,7 +29,7 @@ func (s *Server) runHealthcheckLoop(ctx context.Context, done chan<- struct{}) {
 			s.vpn.healthyTimer.Stop()
 			s.vpn.healthyWait = *s.config.VPN.Initial
 		} else if previousErr == nil && err != nil {
-			s.logger.Info("unhealthy: " + err.Error() + "(see https://github.com/qdm12/gluetun/wiki/Healthcheck)")
+			s.logger.Info("unhealthy: " + err.Error())
 			s.vpn.healthyTimer.Stop()
 			s.vpn.healthyTimer = time.NewTimer(s.vpn.healthyWait)
 		}
@@ -49,9 +49,8 @@ func (s *Server) runHealthcheckLoop(ctx context.Context, done chan<- struct{}) {
 			continue
 		}
 
-		// Success, check again in 5 seconds
-		const period = 5 * time.Second
-		timer := time.NewTimer(period)
+		// Success, check again after the success wait duration
+		timer := time.NewTimer(s.config.SuccessWait)
 		select {
 		case <-ctx.Done():
 			if !timer.Stop() {
@@ -74,12 +73,12 @@ func (s *Server) healthCheck(ctx context.Context) (err error) {
 	const dialNetwork = "tcp4"
 	connection, err := s.dialer.DialContext(ctx, dialNetwork, address)
 	if err != nil {
-		return fmt.Errorf("cannot dial: %w", err)
+		return fmt.Errorf("dialing: %w", err)
 	}
 
 	err = connection.Close()
 	if err != nil {
-		return fmt.Errorf("cannot close connection: %w", err)
+		return fmt.Errorf("closing connection: %w", err)
 	}
 
 	return nil
@@ -91,7 +90,7 @@ func makeAddressToDial(address string) (addressToDial string, err error) {
 		addrErr := new(net.AddrError)
 		ok := errors.As(err, &addrErr)
 		if !ok || addrErr.Err != "missing port in address" {
-			return "", fmt.Errorf("cannot split host and port from address: %w", err)
+			return "", fmt.Errorf("splitting host and port from address: %w", err)
 		}
 		host = address
 		const defaultPort = "443"

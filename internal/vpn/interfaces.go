@@ -2,7 +2,7 @@ package vpn
 
 import (
 	"context"
-	"net"
+	"net/netip"
 
 	"github.com/qdm12/gluetun/internal/configuration/settings"
 	"github.com/qdm12/gluetun/internal/models"
@@ -18,7 +18,7 @@ type Firewall interface {
 }
 
 type Routing interface {
-	VPNLocalGatewayIP(vpnInterface string) (gateway net.IP, err error)
+	VPNLocalGatewayIP(vpnInterface string) (gateway netip.Addr, err error)
 }
 
 type PortForward interface {
@@ -42,7 +42,7 @@ type Storage interface {
 }
 
 type NetLinker interface {
-	AddrAdd(link netlink.Link, addr *netlink.Addr) error
+	AddrReplace(link netlink.Link, addr netlink.Addr) error
 	Router
 	Ruler
 	Linker
@@ -50,22 +50,21 @@ type NetLinker interface {
 }
 
 type Router interface {
-	RouteList(link netlink.Link, family int) (
-		routes []netlink.Route, err error)
-	RouteAdd(route *netlink.Route) error
+	RouteList(family int) (routes []netlink.Route, err error)
+	RouteAdd(route netlink.Route) error
 }
 
 type Ruler interface {
-	RuleAdd(rule *netlink.Rule) error
-	RuleDel(rule *netlink.Rule) error
+	RuleAdd(rule netlink.Rule) error
+	RuleDel(rule netlink.Rule) error
 }
 
 type Linker interface {
 	LinkList() (links []netlink.Link, err error)
 	LinkByName(name string) (link netlink.Link, err error)
-	LinkAdd(link netlink.Link) (err error)
+	LinkAdd(link netlink.Link) (linkIndex int, err error)
 	LinkDel(link netlink.Link) (err error)
-	LinkSetUp(link netlink.Link) (err error)
+	LinkSetUp(link netlink.Link) (linkIndex int, err error)
 	LinkSetDown(link netlink.Link) (err error)
 }
 

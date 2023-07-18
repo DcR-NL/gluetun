@@ -1,11 +1,12 @@
 package wireguard
 
 import (
-	"net"
+	"net/netip"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.zx2c4.com/wireguard/device"
 )
 
 func Test_New(t *testing.T) {
@@ -30,12 +31,9 @@ func Test_New(t *testing.T) {
 			settings: Settings{
 				PrivateKey: validKeyString,
 				PublicKey:  validKeyString,
-				Endpoint: &net.UDPAddr{
-					IP: net.IPv4(1, 2, 3, 4),
-				},
-				Addresses: []*net.IPNet{{
-					IP:   net.IPv4(5, 6, 7, 8),
-					Mask: net.IPv4Mask(255, 255, 255, 255)},
+				Endpoint:   netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 0),
+				Addresses: []netip.Prefix{
+					netip.PrefixFrom(netip.AddrFrom4([4]byte{5, 6, 7, 8}), 32),
 				},
 				FirewallMark: 100,
 			},
@@ -46,16 +44,17 @@ func Test_New(t *testing.T) {
 					InterfaceName: "wg0",
 					PrivateKey:    validKeyString,
 					PublicKey:     validKeyString,
-					Endpoint: &net.UDPAddr{
-						IP:   net.IPv4(1, 2, 3, 4),
-						Port: 51820,
+					Endpoint:      netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 51820),
+					Addresses: []netip.Prefix{
+						netip.PrefixFrom(netip.AddrFrom4([4]byte{5, 6, 7, 8}), 32),
 					},
-					Addresses: []*net.IPNet{{
-						IP:   net.IPv4(5, 6, 7, 8),
-						Mask: net.IPv4Mask(255, 255, 255, 255)},
+					AllowedIPs: []netip.Prefix{
+						allIPv4(),
 					},
-					FirewallMark: 100,
-					IPv6:         ptr(false),
+					FirewallMark:   100,
+					MTU:            device.DefaultMTU,
+					IPv6:           ptr(false),
+					Implementation: "auto",
 				},
 			},
 		},

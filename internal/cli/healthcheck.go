@@ -9,12 +9,14 @@ import (
 	"github.com/qdm12/gluetun/internal/healthcheck"
 )
 
-func (c *CLI) HealthCheck(ctx context.Context, source Source, warner Warner) error {
+func (c *CLI) HealthCheck(ctx context.Context, source Source, _ Warner) error {
 	// Extract the health server port from the configuration.
 	config, err := source.ReadHealth()
 	if err != nil {
 		return err
 	}
+
+	config.SetDefaults()
 
 	err = config.Validate()
 	if err != nil {

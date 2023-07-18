@@ -2,10 +2,11 @@ package pprof
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
-	"github.com/qdm12/gluetun/internal/configuration/settings/helpers"
 	"github.com/qdm12/gluetun/internal/httpserver"
+	"github.com/qdm12/gosettings"
 	"github.com/qdm12/gotree"
 )
 
@@ -16,26 +17,26 @@ type Settings struct {
 	Enabled *bool
 	// See runtime.SetBlockProfileRate
 	// Set to 0 to disable profiling.
-	BlockProfileRate int
+	BlockProfileRate *int
 	// See runtime.SetMutexProfileFraction
 	// Set to 0 to disable profiling.
-	MutexProfileRate int
+	MutexProfileRate *int
 	// HTTPServer contains settings to configure
 	// the HTTP server serving pprof data.
 	HTTPServer httpserver.Settings
 }
 
 func (s *Settings) SetDefaults() {
-	s.Enabled = helpers.DefaultBool(s.Enabled, false)
-	s.HTTPServer.Address = helpers.DefaultString(s.HTTPServer.Address, "localhost:6060")
+	s.Enabled = gosettings.DefaultPointer(s.Enabled, false)
+	s.HTTPServer.Address = gosettings.DefaultString(s.HTTPServer.Address, "localhost:6060")
 	const defaultReadTimeout = 5 * time.Minute // for CPU profiling
-	s.HTTPServer.ReadTimeout = helpers.DefaultDuration(s.HTTPServer.ReadTimeout, defaultReadTimeout)
+	s.HTTPServer.ReadTimeout = gosettings.DefaultNumber(s.HTTPServer.ReadTimeout, defaultReadTimeout)
 	s.HTTPServer.SetDefaults()
 }
 
 func (s Settings) Copy() (copied Settings) {
 	return Settings{
-		Enabled:          helpers.CopyBoolPtr(s.Enabled),
+		Enabled:          gosettings.CopyPointer(s.Enabled),
 		BlockProfileRate: s.BlockProfileRate,
 		MutexProfileRate: s.MutexProfileRate,
 		HTTPServer:       s.HTTPServer.Copy(),
@@ -43,16 +44,16 @@ func (s Settings) Copy() (copied Settings) {
 }
 
 func (s *Settings) MergeWith(other Settings) {
-	s.Enabled = helpers.MergeWithBool(s.Enabled, other.Enabled)
-	s.BlockProfileRate = helpers.MergeWithInt(s.BlockProfileRate, other.BlockProfileRate)
-	s.MutexProfileRate = helpers.MergeWithInt(s.MutexProfileRate, other.MutexProfileRate)
+	s.Enabled = gosettings.MergeWithPointer(s.Enabled, other.Enabled)
+	s.BlockProfileRate = gosettings.MergeWithPointer(s.BlockProfileRate, other.BlockProfileRate)
+	s.MutexProfileRate = gosettings.MergeWithPointer(s.MutexProfileRate, other.MutexProfileRate)
 	s.HTTPServer.MergeWith(other.HTTPServer)
 }
 
 func (s *Settings) OverrideWith(other Settings) {
-	s.Enabled = helpers.OverrideWithBool(s.Enabled, other.Enabled)
-	s.BlockProfileRate = helpers.OverrideWithInt(s.BlockProfileRate, other.BlockProfileRate)
-	s.MutexProfileRate = helpers.OverrideWithInt(s.MutexProfileRate, other.MutexProfileRate)
+	s.Enabled = gosettings.OverrideWithPointer(s.Enabled, other.Enabled)
+	s.BlockProfileRate = gosettings.OverrideWithPointer(s.BlockProfileRate, other.BlockProfileRate)
+	s.MutexProfileRate = gosettings.OverrideWithPointer(s.MutexProfileRate, other.MutexProfileRate)
 	s.HTTPServer.OverrideWith(other.HTTPServer)
 }
 
@@ -62,12 +63,12 @@ var (
 )
 
 func (s Settings) Validate() (err error) {
-	if s.BlockProfileRate < 0 {
-		return ErrBlockProfileRateNegative
+	if *s.BlockProfileRate < 0 {
+		return fmt.Errorf("%w", ErrBlockProfileRateNegative)
 	}
 
-	if s.MutexProfileRate < 0 {
-		return ErrMutexProfileRateNegative
+	if *s.MutexProfileRate < 0 {
+		return fmt.Errorf("%w", ErrMutexProfileRateNegative)
 	}
 
 	return s.HTTPServer.Validate()
@@ -80,12 +81,12 @@ func (s Settings) ToLinesNode() (node *gotree.Node) {
 
 	node = gotree.New("Pprof settings:")
 
-	if s.BlockProfileRate > 0 {
-		node.Appendf("Block profile rate: %d", s.BlockProfileRate)
+	if *s.BlockProfileRate > 0 {
+		node.Appendf("Block profile rate: %d", *s.BlockProfileRate)
 	}
 
-	if s.MutexProfileRate > 0 {
-		node.Appendf("Mutex profile rate: %d", s.MutexProfileRate)
+	if *s.MutexProfileRate > 0 {
+		node.Appendf("Mutex profile rate: %d", *s.MutexProfileRate)
 	}
 
 	node.AppendNode(s.HTTPServer.ToLinesNode())

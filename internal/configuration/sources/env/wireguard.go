@@ -1,44 +1,33 @@
 package env
 
 import (
-	"fmt"
-	"net"
-	"strings"
-
 	"github.com/qdm12/gluetun/internal/configuration/settings"
+	"github.com/qdm12/gosettings/sources/env"
 )
 
 func (s *Source) readWireguard() (wireguard settings.Wireguard, err error) {
 	defer func() {
 		err = unsetEnvKeys([]string{"WIREGUARD_PRIVATE_KEY", "WIREGUARD_PRESHARED_KEY"}, err)
 	}()
-	wireguard.PrivateKey = envToStringPtr("WIREGUARD_PRIVATE_KEY")
-	wireguard.PreSharedKey = envToStringPtr("WIREGUARD_PRESHARED_KEY")
-	_, wireguard.Interface = s.getEnvWithRetro("VPN_INTERFACE", "WIREGUARD_INTERFACE")
-	wireguard.Addresses, err = s.readWireguardAddresses()
+	wireguard.PrivateKey = s.env.Get("WIREGUARD_PRIVATE_KEY", env.ForceLowercase(false))
+	wireguard.PreSharedKey = s.env.Get("WIREGUARD_PRESHARED_KEY", env.ForceLowercase(false))
+	wireguard.Interface = s.env.String("VPN_INTERFACE",
+		env.RetroKeys("WIREGUARD_INTERFACE"), env.ForceLowercase(false))
+	wireguard.Implementation = s.env.String("WIREGUARD_IMPLEMENTATION")
+	wireguard.Addresses, err = s.env.CSVNetipPrefixes("WIREGUARD_ADDRESSES",
+		env.RetroKeys("WIREGUARD_ADDRESS"))
 	if err != nil {
 		return wireguard, err // already wrapped
 	}
+	wireguard.AllowedIPs, err = s.env.CSVNetipPrefixes("WIREGUARD_ALLOWED_IPS")
+	if err != nil {
+		return wireguard, err // already wrapped
+	}
+	mtuPtr, err := s.env.Uint16Ptr("WIREGUARD_MTU")
+	if err != nil {
+		return wireguard, err
+	} else if mtuPtr != nil {
+		wireguard.MTU = *mtuPtr
+	}
 	return wireguard, nil
-}
-
-func (s *Source) readWireguardAddresses() (addresses []net.IPNet, err error) {
-	key, addressesCSV := s.getEnvWithRetro("WIREGUARD_ADDRESSES", "WIREGUARD_ADDRESS")
-	if addressesCSV == "" {
-		return nil, nil
-	}
-
-	addressStrings := strings.Split(addressesCSV, ",")
-	addresses = make([]net.IPNet, len(addressStrings))
-	for i, addressString := range addressStrings {
-		addressString = strings.TrimSpace(addressString)
-		ip, ipNet, err := net.ParseCIDR(addressString)
-		if err != nil {
-			return nil, fmt.Errorf("environment variable %s: %w", key, err)
-		}
-		ipNet.IP = ip
-		addresses[i] = *ipNet
-	}
-
-	return addresses, nil
 }

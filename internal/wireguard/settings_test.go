@@ -1,12 +1,11 @@
 package wireguard
 
 import (
-	"errors"
-	"net"
+	"net/netip"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"golang.zx2c4.com/wireguard/device"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -20,45 +19,46 @@ func Test_Settings_SetDefaults(t *testing.T) {
 	}{
 		"empty settings": {
 			expected: Settings{
-				InterfaceName: "wg0",
-				FirewallMark:  51820,
-				IPv6:          ptr(false),
+				InterfaceName:  "wg0",
+				FirewallMark:   51820,
+				AllowedIPs:     []netip.Prefix{allIPv4()},
+				MTU:            device.DefaultMTU,
+				IPv6:           ptr(false),
+				Implementation: "auto",
 			},
 		},
 		"default endpoint port": {
 			original: Settings{
-				Endpoint: &net.UDPAddr{
-					IP: net.IPv4(1, 2, 3, 4),
-				},
+				Endpoint: netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 0),
 			},
 			expected: Settings{
-				InterfaceName: "wg0",
-				FirewallMark:  51820,
-				Endpoint: &net.UDPAddr{
-					IP:   net.IPv4(1, 2, 3, 4),
-					Port: 51820,
-				},
-				IPv6: ptr(false),
+				InterfaceName:  "wg0",
+				FirewallMark:   51820,
+				Endpoint:       netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 51820),
+				AllowedIPs:     []netip.Prefix{allIPv4()},
+				MTU:            device.DefaultMTU,
+				IPv6:           ptr(false),
+				Implementation: "auto",
 			},
 		},
 		"not empty settings": {
 			original: Settings{
-				InterfaceName: "wg1",
-				FirewallMark:  999,
-				Endpoint: &net.UDPAddr{
-					IP:   net.IPv4(1, 2, 3, 4),
-					Port: 9999,
-				},
-				IPv6: ptr(true),
+				InterfaceName:  "wg1",
+				FirewallMark:   999,
+				Endpoint:       netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 9999),
+				AllowedIPs:     []netip.Prefix{allIPv4()},
+				MTU:            device.DefaultMTU,
+				IPv6:           ptr(true),
+				Implementation: "userspace",
 			},
 			expected: Settings{
-				InterfaceName: "wg1",
-				FirewallMark:  999,
-				Endpoint: &net.UDPAddr{
-					IP:   net.IPv4(1, 2, 3, 4),
-					Port: 9999,
-				},
-				IPv6: ptr(true),
+				InterfaceName:  "wg1",
+				FirewallMark:   999,
+				Endpoint:       netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 9999),
+				AllowedIPs:     []netip.Prefix{allIPv4()},
+				MTU:            device.DefaultMTU,
+				IPv6:           ptr(true),
+				Implementation: "userspace",
 			},
 		},
 	}
@@ -84,37 +84,43 @@ func Test_Settings_Check(t *testing.T) {
 	)
 
 	testCases := map[string]struct {
-		settings Settings
-		err      error
+		settings   Settings
+		errWrapped error
+		errMessage string
 	}{
 		"empty settings": {
-			err: errors.New("invalid interface name: "),
+			errWrapped: ErrInterfaceNameInvalid,
+			errMessage: "invalid interface name: ",
 		},
 		"bad interface name": {
 			settings: Settings{
 				InterfaceName: "$H1T",
 			},
-			err: errors.New("invalid interface name: $H1T"),
+			errWrapped: ErrInterfaceNameInvalid,
+			errMessage: "invalid interface name: $H1T",
 		},
 		"empty private key": {
 			settings: Settings{
 				InterfaceName: "wg0",
 			},
-			err: ErrPrivateKeyMissing,
+			errWrapped: ErrPrivateKeyMissing,
+			errMessage: "private key is missing",
 		},
 		"bad private key": {
 			settings: Settings{
 				InterfaceName: "wg0",
 				PrivateKey:    "bad key",
 			},
-			err: ErrPrivateKeyInvalid,
+			errWrapped: ErrPrivateKeyInvalid,
+			errMessage: "cannot parse private key",
 		},
 		"empty public key": {
 			settings: Settings{
 				InterfaceName: "wg0",
 				PrivateKey:    validKey1,
 			},
-			err: ErrPublicKeyMissing,
+			errWrapped: ErrPublicKeyMissing,
+			errMessage: "public key is missing",
 		},
 		"bad public key": {
 			settings: Settings{
@@ -122,7 +128,8 @@ func Test_Settings_Check(t *testing.T) {
 				PrivateKey:    validKey1,
 				PublicKey:     "bad key",
 			},
-			err: errors.New("cannot parse public key: bad key"),
+			errWrapped: ErrPublicKeyInvalid,
+			errMessage: "cannot parse public key: bad key",
 		},
 		"bad preshared key": {
 			settings: Settings{
@@ -131,111 +138,156 @@ func Test_Settings_Check(t *testing.T) {
 				PublicKey:     validKey2,
 				PreSharedKey:  "bad key",
 			},
-			err: errors.New("cannot parse pre-shared key"),
+			errWrapped: ErrPreSharedKeyInvalid,
+			errMessage: "cannot parse pre-shared key",
 		},
-		"empty endpoint": {
+		"invalid endpoint address": {
 			settings: Settings{
 				InterfaceName: "wg0",
 				PrivateKey:    validKey1,
 				PublicKey:     validKey2,
 			},
-			err: ErrEndpointMissing,
+			errWrapped: ErrEndpointAddrMissing,
+			errMessage: "endpoint address is missing",
 		},
-		"nil endpoint IP": {
+		"zero endpoint port": {
 			settings: Settings{
 				InterfaceName: "wg0",
 				PrivateKey:    validKey1,
 				PublicKey:     validKey2,
-				Endpoint:      &net.UDPAddr{},
+				Endpoint:      netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 0),
 			},
-			err: ErrEndpointIPMissing,
-		},
-		"nil endpoint port": {
-			settings: Settings{
-				InterfaceName: "wg0",
-				PrivateKey:    validKey1,
-				PublicKey:     validKey2,
-				Endpoint: &net.UDPAddr{
-					IP: net.IPv4(1, 2, 3, 4),
-				},
-			},
-			err: ErrEndpointPortMissing,
+			errWrapped: ErrEndpointPortMissing,
+			errMessage: "endpoint port is missing",
 		},
 		"no address": {
 			settings: Settings{
 				InterfaceName: "wg0",
 				PrivateKey:    validKey1,
 				PublicKey:     validKey2,
-				Endpoint: &net.UDPAddr{
-					IP:   net.IPv4(1, 2, 3, 4),
-					Port: 51820,
-				},
+				Endpoint:      netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 51820),
 			},
-			err: ErrAddressMissing,
+			errWrapped: ErrAddressMissing,
+			errMessage: "interface address is missing",
 		},
-		"nil address": {
+		"invalid address": {
 			settings: Settings{
 				InterfaceName: "wg0",
 				PrivateKey:    validKey1,
 				PublicKey:     validKey2,
-				Endpoint: &net.UDPAddr{
-					IP:   net.IPv4(1, 2, 3, 4),
-					Port: 51820,
-				},
-				Addresses: []*net.IPNet{nil},
+				Endpoint:      netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 51820),
+				Addresses:     []netip.Prefix{{}},
 			},
-			err: errors.New("interface address is nil: for address 1 of 1"),
+			errWrapped: ErrAddressNotValid,
+			errMessage: "interface address is not valid: for address 1 of 1",
 		},
-		"nil address IP": {
+
+		"no allowed IP": {
 			settings: Settings{
 				InterfaceName: "wg0",
 				PrivateKey:    validKey1,
 				PublicKey:     validKey2,
-				Endpoint: &net.UDPAddr{
-					IP:   net.IPv4(1, 2, 3, 4),
-					Port: 51820,
+				Endpoint:      netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 51820),
+				Addresses: []netip.Prefix{
+					netip.PrefixFrom(netip.AddrFrom4([4]byte{5, 6, 7, 8}), 24),
 				},
-				Addresses: []*net.IPNet{{}},
 			},
-			err: errors.New("interface address IP is missing: for address 1 of 1"),
+			errWrapped: ErrAllowedIPsMissing,
+			errMessage: "allowed IPs are missing",
 		},
-		"nil address mask": {
+		"invalid allowed IP": {
 			settings: Settings{
 				InterfaceName: "wg0",
 				PrivateKey:    validKey1,
 				PublicKey:     validKey2,
-				Endpoint: &net.UDPAddr{
-					IP:   net.IPv4(1, 2, 3, 4),
-					Port: 51820,
+				Endpoint:      netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 51820),
+				Addresses: []netip.Prefix{
+					netip.PrefixFrom(netip.AddrFrom4([4]byte{5, 6, 7, 8}), 24),
 				},
-				Addresses: []*net.IPNet{{IP: net.IPv4(1, 2, 3, 4)}},
+				AllowedIPs: []netip.Prefix{{}},
 			},
-			err: errors.New("interface address mask is missing: for address 1 of 1"),
+			errWrapped: ErrAllowedIPNotValid,
+			errMessage: "allowed IP is not valid: for allowed IP 1 of 1",
+		},
+		"ipv6 allowed IP": {
+			settings: Settings{
+				InterfaceName: "wg0",
+				PrivateKey:    validKey1,
+				PublicKey:     validKey2,
+				Endpoint:      netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 51820),
+				Addresses: []netip.Prefix{
+					netip.PrefixFrom(netip.AddrFrom4([4]byte{5, 6, 7, 8}), 24),
+				},
+				AllowedIPs: []netip.Prefix{
+					allIPv6(),
+				},
+				IPv6: ptrTo(false),
+			},
+			errWrapped: ErrAllowedIPv6NotSupported,
+			errMessage: "allowed IPv6 address not supported: for allowed IP ::/0",
 		},
 		"zero firewall mark": {
 			settings: Settings{
 				InterfaceName: "wg0",
 				PrivateKey:    validKey1,
 				PublicKey:     validKey2,
-				Endpoint: &net.UDPAddr{
-					IP:   net.IPv4(1, 2, 3, 4),
-					Port: 51820,
+				Endpoint:      netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 51820),
+				AllowedIPs:    []netip.Prefix{allIPv4()},
+				Addresses: []netip.Prefix{
+					netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 24),
 				},
-				Addresses: []*net.IPNet{{IP: net.IPv4(1, 2, 3, 4), Mask: net.CIDRMask(24, 32)}},
 			},
-			err: ErrFirewallMarkMissing,
+			errWrapped: ErrFirewallMarkMissing,
+			errMessage: "firewall mark is missing",
+		},
+		"missing_MTU": {
+			settings: Settings{
+				InterfaceName: "wg0",
+				PrivateKey:    validKey1,
+				PublicKey:     validKey2,
+				Endpoint:      netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 51820),
+				AllowedIPs:    []netip.Prefix{allIPv4()},
+				Addresses: []netip.Prefix{
+					netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 24),
+				},
+				FirewallMark: 999,
+			},
+			errWrapped: ErrMTUMissing,
+			errMessage: "MTU is missing",
+		},
+		"invalid implementation": {
+			settings: Settings{
+				InterfaceName: "wg0",
+				PrivateKey:    validKey1,
+				PublicKey:     validKey2,
+				Endpoint:      netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 51820),
+				AllowedIPs:    []netip.Prefix{allIPv4()},
+				Addresses: []netip.Prefix{
+					netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 24),
+				},
+				FirewallMark:   999,
+				MTU:            1420,
+				Implementation: "x",
+			},
+			errWrapped: ErrImplementationInvalid,
+			errMessage: "invalid implementation: x",
 		},
 		"all valid": {
 			settings: Settings{
 				InterfaceName: "wg0",
 				PrivateKey:    validKey1,
 				PublicKey:     validKey2,
-				Endpoint: &net.UDPAddr{
-					IP:   net.IPv4(1, 2, 3, 4),
-					Port: 51820,
+				Endpoint:      netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 51820),
+				AllowedIPs: []netip.Prefix{
+					allIPv6(),
 				},
-				Addresses:    []*net.IPNet{{IP: net.IPv4(1, 2, 3, 4), Mask: net.CIDRMask(24, 32)}},
-				FirewallMark: 999,
+				Addresses: []netip.Prefix{
+					netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 24),
+				},
+				FirewallMark:   999,
+				MTU:            1420,
+				IPv6:           ptrTo(true),
+				Implementation: "userspace",
 			},
 		},
 	}
@@ -247,11 +299,9 @@ func Test_Settings_Check(t *testing.T) {
 
 			err := testCase.settings.Check()
 
-			if testCase.err != nil {
-				require.Error(t, err)
-				assert.Equal(t, testCase.err.Error(), err.Error())
-			} else {
-				assert.NoError(t, err)
+			assert.ErrorIs(t, err, testCase.errWrapped)
+			if testCase.errWrapped != nil {
+				assert.EqualError(t, err, testCase.errMessage)
 			}
 		})
 	}
@@ -287,14 +337,16 @@ func Test_Settings_String(t *testing.T) {
 	t.Parallel()
 
 	settings := Settings{
-		InterfaceName: "wg0",
-		IPv6:          ptr(true),
+		InterfaceName:  "wg0",
+		IPv6:           ptr(true),
+		Implementation: "x",
 	}
 	const expected = `├── Interface name: wg0
 ├── Private key: not set
 ├── Pre shared key: not set
 ├── Endpoint: not set
 ├── IPv6: enabled
+├── Implementation: x
 └── Addresses: not set`
 	s := settings.String()
 	assert.Equal(t, expected, s)
@@ -318,6 +370,7 @@ func Test_Settings_Lines(t *testing.T) {
 				"├── Pre shared key: not set",
 				"├── Endpoint: not set",
 				"├── IPv6: disabled",
+				"├── Implementation: ",
 				"└── Addresses: not set",
 			},
 		},
@@ -327,17 +380,15 @@ func Test_Settings_Lines(t *testing.T) {
 				PrivateKey:    "private key",
 				PublicKey:     "public key",
 				PreSharedKey:  "pre-shared key",
-				Endpoint: &net.UDPAddr{
-					IP:   net.IPv4(1, 2, 3, 4),
-					Port: 51820,
+				Endpoint:      netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 51820),
+				FirewallMark:  999,
+				RulePriority:  888,
+				Addresses: []netip.Prefix{
+					netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 24),
+					netip.PrefixFrom(netip.AddrFrom4([4]byte{2, 2, 2, 2}), 32),
 				},
-				FirewallMark: 999,
-				RulePriority: 888,
-				Addresses: []*net.IPNet{
-					{IP: net.IPv4(1, 1, 1, 1), Mask: net.CIDRMask(24, 32)},
-					{IP: net.IPv4(2, 2, 2, 2), Mask: net.CIDRMask(32, 32)},
-				},
-				IPv6: ptr(true),
+				IPv6:           ptr(true),
+				Implementation: "userspace",
 			},
 			lines: []string{
 				"├── Interface name: wg0",
@@ -348,6 +399,7 @@ func Test_Settings_Lines(t *testing.T) {
 				"├── IPv6: enabled",
 				"├── Firewall mark: 999",
 				"├── Rule priority: 888",
+				"├── Implementation: userspace",
 				"└── Addresses:",
 				"    ├── 1.1.1.1/24",
 				"    └── 2.2.2.2/32",
@@ -361,9 +413,9 @@ func Test_Settings_Lines(t *testing.T) {
 			},
 			settings: Settings{
 				InterfaceName: "wg0",
-				Addresses: []*net.IPNet{
-					{IP: net.IPv4(1, 1, 1, 1), Mask: net.CIDRMask(24, 32)},
-					{IP: net.IPv4(2, 2, 2, 2), Mask: net.CIDRMask(32, 32)},
+				Addresses: []netip.Prefix{
+					netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 24),
+					netip.PrefixFrom(netip.AddrFrom4([4]byte{2, 2, 2, 2}), 32),
 				},
 				IPv6: ptr(false),
 			},
@@ -373,6 +425,7 @@ func Test_Settings_Lines(t *testing.T) {
 				"- Pre shared key: not set",
 				"- Endpoint: not set",
 				"- IPv6: disabled",
+				"- Implementation: ",
 				"* Addresses:",
 				"  - 1.1.1.1/24",
 				"  * 2.2.2.2/32",

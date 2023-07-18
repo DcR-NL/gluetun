@@ -1,11 +1,16 @@
 package env
 
 import (
+	"os"
+
 	"github.com/qdm12/gluetun/internal/configuration/settings"
+	"github.com/qdm12/gosettings/sources/env"
 )
 
 type Source struct {
-	warner Warner
+	env                 env.Env
+	warner              Warner
+	handleDeprecatedKey func(deprecatedKey, newKey string)
 }
 
 type Warner interface {
@@ -13,8 +18,16 @@ type Warner interface {
 }
 
 func New(warner Warner) *Source {
+	handleDeprecatedKey := func(deprecatedKey, newKey string) {
+		warner.Warn(
+			"You are using the old environment variable " + deprecatedKey +
+				", please consider changing it to " + newKey)
+	}
+
 	return &Source{
-		warner: warner,
+		env:                 *env.New(os.Environ(), handleDeprecatedKey),
+		warner:              warner,
+		handleDeprecatedKey: handleDeprecatedKey,
 	}
 }
 
@@ -46,7 +59,7 @@ func (s *Source) Read() (settings settings.Settings, err error) {
 		return settings, err
 	}
 
-	settings.Log, err = readLog()
+	settings.Log, err = s.readLog()
 	if err != nil {
 		return settings, err
 	}
@@ -56,12 +69,12 @@ func (s *Source) Read() (settings settings.Settings, err error) {
 		return settings, err
 	}
 
-	settings.Updater, err = readUpdater()
+	settings.Updater, err = s.readUpdater()
 	if err != nil {
 		return settings, err
 	}
 
-	settings.Version, err = readVersion()
+	settings.Version, err = s.readVersion()
 	if err != nil {
 		return settings, err
 	}
@@ -81,37 +94,10 @@ func (s *Source) Read() (settings settings.Settings, err error) {
 		return settings, err
 	}
 
-	settings.Pprof, err = readPprof()
+	settings.Pprof, err = s.readPprof()
 	if err != nil {
 		return settings, err
 	}
 
 	return settings, nil
-}
-
-func (s *Source) onRetroActive(oldKey, newKey string) {
-	s.warner.Warn(
-		"You are using the old environment variable " + oldKey +
-			", please consider changing it to " + newKey)
-}
-
-// getEnvWithRetro returns the first environment variable
-// key and corresponding non empty value from the environment
-// variable keys given. It first goes through the retroKeys
-// and end on returning the value corresponding to the currentKey.
-// Note retroKeys should be in order from oldest to most
-// recent retro-compatibility key.
-func (s *Source) getEnvWithRetro(currentKey string,
-	retroKeys ...string) (key, value string) {
-	// We check retro-compatibility keys first since
-	// the current key might be set in the Dockerfile.
-	for _, key = range retroKeys {
-		value = getCleanedEnv(key)
-		if value != "" {
-			s.onRetroActive(key, currentKey)
-			return key, value
-		}
-	}
-
-	return currentKey, getCleanedEnv(currentKey)
 }

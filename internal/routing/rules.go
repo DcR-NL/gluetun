@@ -1,14 +1,13 @@
 package routing
 
 import (
-	"bytes"
 	"fmt"
-	"net"
+	"net/netip"
 
 	"github.com/qdm12/gluetun/internal/netlink"
 )
 
-func (r *Routing) addIPRule(src, dst *net.IPNet, table, priority int) error {
+func (r *Routing) addIPRule(src, dst netip.Prefix, table, priority int) error {
 	const add = true
 	r.logger.Debug(ruleDbgMsg(add, src, dst, table, priority))
 
@@ -18,24 +17,24 @@ func (r *Routing) addIPRule(src, dst *net.IPNet, table, priority int) error {
 	rule.Priority = priority
 	rule.Table = table
 
-	existingRules, err := r.netLinker.RuleList(netlink.FAMILY_ALL)
+	existingRules, err := r.netLinker.RuleList(netlink.FamilyAll)
 	if err != nil {
-		return fmt.Errorf("cannot list rules: %w", err)
+		return fmt.Errorf("listing rules: %w", err)
 	}
 	for i := range existingRules {
-		if !rulesAreEqual(&existingRules[i], rule) {
+		if !rulesAreEqual(existingRules[i], rule) {
 			continue
 		}
 		return nil // already exists
 	}
 
 	if err := r.netLinker.RuleAdd(rule); err != nil {
-		return fmt.Errorf("cannot add rule %s: %w", rule, err)
+		return fmt.Errorf("adding rule %s: %w", rule, err)
 	}
 	return nil
 }
 
-func (r *Routing) deleteIPRule(src, dst *net.IPNet, table, priority int) error {
+func (r *Routing) deleteIPRule(src, dst netip.Prefix, table, priority int) error {
 	const add = false
 	r.logger.Debug(ruleDbgMsg(add, src, dst, table, priority))
 
@@ -45,22 +44,22 @@ func (r *Routing) deleteIPRule(src, dst *net.IPNet, table, priority int) error {
 	rule.Priority = priority
 	rule.Table = table
 
-	existingRules, err := r.netLinker.RuleList(netlink.FAMILY_ALL)
+	existingRules, err := r.netLinker.RuleList(netlink.FamilyAll)
 	if err != nil {
-		return fmt.Errorf("cannot list rules: %w", err)
+		return fmt.Errorf("listing rules: %w", err)
 	}
 	for i := range existingRules {
-		if !rulesAreEqual(&existingRules[i], rule) {
+		if !rulesAreEqual(existingRules[i], rule) {
 			continue
 		}
 		if err := r.netLinker.RuleDel(rule); err != nil {
-			return fmt.Errorf("cannot delete rule %s: %w", rule, err)
+			return fmt.Errorf("deleting rule %s: %w", rule, err)
 		}
 	}
 	return nil
 }
 
-func ruleDbgMsg(add bool, src, dst *net.IPNet,
+func ruleDbgMsg(add bool, src, dst netip.Prefix,
 	table, priority int) (debugMessage string) {
 	debugMessage = "ip rule"
 
@@ -70,11 +69,11 @@ func ruleDbgMsg(add bool, src, dst *net.IPNet,
 		debugMessage += " del"
 	}
 
-	if src != nil {
+	if src.IsValid() {
 		debugMessage += " from " + src.String()
 	}
 
-	if dst != nil {
+	if dst.IsValid() {
 		debugMessage += " to " + dst.String()
 	}
 
@@ -89,25 +88,20 @@ func ruleDbgMsg(add bool, src, dst *net.IPNet,
 	return debugMessage
 }
 
-func rulesAreEqual(a, b *netlink.Rule) bool {
-	if a == nil && b == nil {
-		return true
-	}
-	if a == nil || b == nil {
-		return false
-	}
-	return ipNetsAreEqual(a.Src, b.Src) &&
-		ipNetsAreEqual(a.Dst, b.Dst) &&
+func rulesAreEqual(a, b netlink.Rule) bool {
+	return ipPrefixesAreEqual(a.Src, b.Src) &&
+		ipPrefixesAreEqual(a.Dst, b.Dst) &&
 		a.Priority == b.Priority &&
 		a.Table == b.Table
 }
 
-func ipNetsAreEqual(a, b *net.IPNet) bool {
-	if a == nil && b == nil {
+func ipPrefixesAreEqual(a, b netip.Prefix) bool {
+	if !a.IsValid() && !b.IsValid() {
 		return true
 	}
-	if a == nil || b == nil {
+	if !a.IsValid() || !b.IsValid() {
 		return false
 	}
-	return a.IP.Equal(b.IP) && bytes.Equal(a.Mask, b.Mask)
+	return a.Bits() == b.Bits() &&
+		a.Addr().Compare(b.Addr()) == 0
 }

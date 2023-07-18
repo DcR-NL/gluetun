@@ -2,7 +2,7 @@ package wireguard
 
 import (
 	"errors"
-	"net"
+	"net/netip"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -14,35 +14,27 @@ import (
 func Test_Wireguard_addAddresses(t *testing.T) {
 	t.Parallel()
 
-	ipNetOne := &net.IPNet{IP: net.IPv4(1, 2, 3, 4), Mask: net.IPv4Mask(255, 255, 255, 255)}
-	ipNetTwo := &net.IPNet{IP: net.ParseIP("::1234"), Mask: net.CIDRMask(64, 128)}
-
-	newLink := func() netlink.Link {
-		linkAttrs := netlink.NewLinkAttrs()
-		linkAttrs.Name = "a_bridge"
-		return &netlink.Bridge{
-			LinkAttrs: linkAttrs,
-		}
-	}
+	ipNetOne := netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 32)
+	ipNetTwo := netip.PrefixFrom(netip.MustParseAddr("::1234"), 64)
 
 	errDummy := errors.New("dummy")
 
 	testCases := map[string]struct {
 		link      netlink.Link
-		addrs     []*net.IPNet
+		addrs     []netip.Prefix
 		wgBuilder func(ctrl *gomock.Controller, link netlink.Link) *Wireguard
 		err       error
 	}{
 		"success": {
-			link:  newLink(),
-			addrs: []*net.IPNet{ipNetOne, ipNetTwo},
+			link:  netlink.Link{Type: "wireguard"},
+			addrs: []netip.Prefix{ipNetOne, ipNetTwo},
 			wgBuilder: func(ctrl *gomock.Controller, link netlink.Link) *Wireguard {
 				netLinker := NewMockNetLinker(ctrl)
 				firstCall := netLinker.EXPECT().
-					AddrAdd(link, &netlink.Addr{IPNet: ipNetOne}).
+					AddrReplace(link, netlink.Addr{Network: ipNetOne}).
 					Return(nil)
 				netLinker.EXPECT().
-					AddrAdd(link, &netlink.Addr{IPNet: ipNetTwo}).
+					AddrReplace(link, netlink.Addr{Network: ipNetTwo}).
 					Return(nil).After(firstCall)
 				return &Wireguard{
 					netlink: netLinker,
@@ -53,12 +45,12 @@ func Test_Wireguard_addAddresses(t *testing.T) {
 			},
 		},
 		"first add error": {
-			link:  newLink(),
-			addrs: []*net.IPNet{ipNetOne, ipNetTwo},
+			link:  netlink.Link{Type: "wireguard", Name: "a_bridge"},
+			addrs: []netip.Prefix{ipNetOne, ipNetTwo},
 			wgBuilder: func(ctrl *gomock.Controller, link netlink.Link) *Wireguard {
 				netLinker := NewMockNetLinker(ctrl)
 				netLinker.EXPECT().
-					AddrAdd(link, &netlink.Addr{IPNet: ipNetOne}).
+					AddrReplace(link, netlink.Addr{Network: ipNetOne}).
 					Return(errDummy)
 				return &Wireguard{
 					netlink: netLinker,
@@ -70,15 +62,15 @@ func Test_Wireguard_addAddresses(t *testing.T) {
 			err: errors.New("dummy: when adding address 1.2.3.4/32 to link a_bridge"),
 		},
 		"second add error": {
-			link:  newLink(),
-			addrs: []*net.IPNet{ipNetOne, ipNetTwo},
+			link:  netlink.Link{Type: "wireguard", Name: "a_bridge"},
+			addrs: []netip.Prefix{ipNetOne, ipNetTwo},
 			wgBuilder: func(ctrl *gomock.Controller, link netlink.Link) *Wireguard {
 				netLinker := NewMockNetLinker(ctrl)
 				firstCall := netLinker.EXPECT().
-					AddrAdd(link, &netlink.Addr{IPNet: ipNetOne}).
+					AddrReplace(link, netlink.Addr{Network: ipNetOne}).
 					Return(nil)
 				netLinker.EXPECT().
-					AddrAdd(link, &netlink.Addr{IPNet: ipNetTwo}).
+					AddrReplace(link, netlink.Addr{Network: ipNetTwo}).
 					Return(errDummy).After(firstCall)
 				return &Wireguard{
 					netlink: netLinker,
@@ -90,8 +82,7 @@ func Test_Wireguard_addAddresses(t *testing.T) {
 			err: errors.New("dummy: when adding address ::1234/64 to link a_bridge"),
 		},
 		"ignore IPv6": {
-			link:  newLink(),
-			addrs: []*net.IPNet{ipNetTwo},
+			addrs: []netip.Prefix{ipNetTwo},
 			wgBuilder: func(ctrl *gomock.Controller, link netlink.Link) *Wireguard {
 				return &Wireguard{
 					settings: Settings{

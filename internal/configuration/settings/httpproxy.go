@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/qdm12/gluetun/internal/configuration/settings/helpers"
+	"github.com/qdm12/gosettings"
 	"github.com/qdm12/gotree"
 	"github.com/qdm12/govalid/address"
 )
@@ -46,7 +46,7 @@ func (h HTTPProxy) validate() (err error) {
 	// Do not validate user and password
 
 	uid := os.Getuid()
-	_, err = address.Validate(h.ListeningAddress, address.OptionListening(uid))
+	err = address.Validate(h.ListeningAddress, address.OptionListening(uid))
 	if err != nil {
 		return fmt.Errorf("%w: %s", ErrServerAddressNotValid, h.ListeningAddress)
 	}
@@ -56,12 +56,12 @@ func (h HTTPProxy) validate() (err error) {
 
 func (h *HTTPProxy) copy() (copied HTTPProxy) {
 	return HTTPProxy{
-		User:              helpers.CopyStringPtr(h.User),
-		Password:          helpers.CopyStringPtr(h.Password),
+		User:              gosettings.CopyPointer(h.User),
+		Password:          gosettings.CopyPointer(h.Password),
 		ListeningAddress:  h.ListeningAddress,
-		Enabled:           helpers.CopyBoolPtr(h.Enabled),
-		Stealth:           helpers.CopyBoolPtr(h.Stealth),
-		Log:               helpers.CopyBoolPtr(h.Log),
+		Enabled:           gosettings.CopyPointer(h.Enabled),
+		Stealth:           gosettings.CopyPointer(h.Stealth),
+		Log:               gosettings.CopyPointer(h.Log),
 		ReadHeaderTimeout: h.ReadHeaderTimeout,
 		ReadTimeout:       h.ReadTimeout,
 	}
@@ -70,41 +70,41 @@ func (h *HTTPProxy) copy() (copied HTTPProxy) {
 // mergeWith merges the other settings into any
 // unset field of the receiver settings object.
 func (h *HTTPProxy) mergeWith(other HTTPProxy) {
-	h.User = helpers.MergeWithStringPtr(h.User, other.User)
-	h.Password = helpers.MergeWithStringPtr(h.Password, other.Password)
-	h.ListeningAddress = helpers.MergeWithString(h.ListeningAddress, other.ListeningAddress)
-	h.Enabled = helpers.MergeWithBool(h.Enabled, other.Enabled)
-	h.Stealth = helpers.MergeWithBool(h.Stealth, other.Stealth)
-	h.Log = helpers.MergeWithBool(h.Log, other.Log)
-	h.ReadHeaderTimeout = helpers.MergeWithDuration(h.ReadHeaderTimeout, other.ReadHeaderTimeout)
-	h.ReadTimeout = helpers.MergeWithDuration(h.ReadTimeout, other.ReadTimeout)
+	h.User = gosettings.MergeWithPointer(h.User, other.User)
+	h.Password = gosettings.MergeWithPointer(h.Password, other.Password)
+	h.ListeningAddress = gosettings.MergeWithString(h.ListeningAddress, other.ListeningAddress)
+	h.Enabled = gosettings.MergeWithPointer(h.Enabled, other.Enabled)
+	h.Stealth = gosettings.MergeWithPointer(h.Stealth, other.Stealth)
+	h.Log = gosettings.MergeWithPointer(h.Log, other.Log)
+	h.ReadHeaderTimeout = gosettings.MergeWithNumber(h.ReadHeaderTimeout, other.ReadHeaderTimeout)
+	h.ReadTimeout = gosettings.MergeWithNumber(h.ReadTimeout, other.ReadTimeout)
 }
 
 // overrideWith overrides fields of the receiver
 // settings object with any field set in the other
 // settings.
 func (h *HTTPProxy) overrideWith(other HTTPProxy) {
-	h.User = helpers.OverrideWithStringPtr(h.User, other.User)
-	h.Password = helpers.OverrideWithStringPtr(h.Password, other.Password)
-	h.ListeningAddress = helpers.OverrideWithString(h.ListeningAddress, other.ListeningAddress)
-	h.Enabled = helpers.OverrideWithBool(h.Enabled, other.Enabled)
-	h.Stealth = helpers.OverrideWithBool(h.Stealth, other.Stealth)
-	h.Log = helpers.OverrideWithBool(h.Log, other.Log)
-	h.ReadHeaderTimeout = helpers.OverrideWithDuration(h.ReadHeaderTimeout, other.ReadHeaderTimeout)
-	h.ReadTimeout = helpers.OverrideWithDuration(h.ReadTimeout, other.ReadTimeout)
+	h.User = gosettings.OverrideWithPointer(h.User, other.User)
+	h.Password = gosettings.OverrideWithPointer(h.Password, other.Password)
+	h.ListeningAddress = gosettings.OverrideWithString(h.ListeningAddress, other.ListeningAddress)
+	h.Enabled = gosettings.OverrideWithPointer(h.Enabled, other.Enabled)
+	h.Stealth = gosettings.OverrideWithPointer(h.Stealth, other.Stealth)
+	h.Log = gosettings.OverrideWithPointer(h.Log, other.Log)
+	h.ReadHeaderTimeout = gosettings.OverrideWithNumber(h.ReadHeaderTimeout, other.ReadHeaderTimeout)
+	h.ReadTimeout = gosettings.OverrideWithNumber(h.ReadTimeout, other.ReadTimeout)
 }
 
 func (h *HTTPProxy) setDefaults() {
-	h.User = helpers.DefaultStringPtr(h.User, "")
-	h.Password = helpers.DefaultStringPtr(h.Password, "")
-	h.ListeningAddress = helpers.DefaultString(h.ListeningAddress, ":8888")
-	h.Enabled = helpers.DefaultBool(h.Enabled, false)
-	h.Stealth = helpers.DefaultBool(h.Stealth, false)
-	h.Log = helpers.DefaultBool(h.Log, false)
+	h.User = gosettings.DefaultPointer(h.User, "")
+	h.Password = gosettings.DefaultPointer(h.Password, "")
+	h.ListeningAddress = gosettings.DefaultString(h.ListeningAddress, ":8888")
+	h.Enabled = gosettings.DefaultPointer(h.Enabled, false)
+	h.Stealth = gosettings.DefaultPointer(h.Stealth, false)
+	h.Log = gosettings.DefaultPointer(h.Log, false)
 	const defaultReadHeaderTimeout = time.Second
-	h.ReadHeaderTimeout = helpers.DefaultDuration(h.ReadHeaderTimeout, defaultReadHeaderTimeout)
+	h.ReadHeaderTimeout = gosettings.DefaultNumber(h.ReadHeaderTimeout, defaultReadHeaderTimeout)
 	const defaultReadTimeout = 3 * time.Second
-	h.ReadTimeout = helpers.DefaultDuration(h.ReadTimeout, defaultReadTimeout)
+	h.ReadTimeout = gosettings.DefaultNumber(h.ReadTimeout, defaultReadTimeout)
 }
 
 func (h HTTPProxy) String() string {
@@ -113,16 +113,16 @@ func (h HTTPProxy) String() string {
 
 func (h HTTPProxy) toLinesNode() (node *gotree.Node) {
 	node = gotree.New("HTTP proxy settings:")
-	node.Appendf("Enabled: %s", helpers.BoolPtrToYesNo(h.Enabled))
+	node.Appendf("Enabled: %s", gosettings.BoolToYesNo(h.Enabled))
 	if !*h.Enabled {
 		return node
 	}
 
 	node.Appendf("Listening address: %s", h.ListeningAddress)
 	node.Appendf("User: %s", *h.User)
-	node.Appendf("Password: %s", helpers.ObfuscatePassword(*h.Password))
-	node.Appendf("Stealth mode: %s", helpers.BoolPtrToYesNo(h.Stealth))
-	node.Appendf("Log: %s", helpers.BoolPtrToYesNo(h.Log))
+	node.Appendf("Password: %s", gosettings.ObfuscateKey(*h.Password))
+	node.Appendf("Stealth mode: %s", gosettings.BoolToYesNo(h.Stealth))
+	node.Appendf("Log: %s", gosettings.BoolToYesNo(h.Log))
 	node.Appendf("Read header timeout: %s", h.ReadHeaderTimeout)
 	node.Appendf("Read timeout: %s", h.ReadTimeout)
 

@@ -2,7 +2,7 @@ package env
 
 import (
 	"fmt"
-	"net"
+	"net/netip"
 
 	"github.com/qdm12/gluetun/internal/configuration/settings"
 )
@@ -13,9 +13,9 @@ func (s *Source) readDNS() (dns settings.DNS, err error) {
 		return dns, err
 	}
 
-	dns.KeepNameserver, err = envToBoolPtr("DNS_KEEP_NAMESERVER")
+	dns.KeepNameserver, err = s.env.BoolPtr("DNS_KEEP_NAMESERVER")
 	if err != nil {
-		return dns, fmt.Errorf("environment variable DNS_KEEP_NAMESERVER: %w", err)
+		return dns, err
 	}
 
 	dns.DoT, err = s.readDoT()
@@ -26,20 +26,25 @@ func (s *Source) readDNS() (dns settings.DNS, err error) {
 	return dns, nil
 }
 
-func (s *Source) readDNSServerAddress() (address net.IP, err error) {
-	key, value := s.getEnvWithRetro("DNS_ADDRESS", "DNS_PLAINTEXT_ADDRESS")
-	if value == "" {
-		return nil, nil
+func (s *Source) readDNSServerAddress() (address netip.Addr, err error) {
+	const currentKey = "DNS_ADDRESS"
+	key := firstKeySet(s.env, "DNS_PLAINTEXT_ADDRESS", currentKey)
+	switch key {
+	case "":
+		return address, nil
+	case currentKey:
+	default: // Retro-compatibility
+		s.handleDeprecatedKey(key, currentKey)
 	}
 
-	address = net.ParseIP(value)
-	if address == nil {
-		return nil, fmt.Errorf("environment variable %s: %w: %s", key, ErrIPAddressParse, value)
+	address, err = s.env.NetipAddr(key)
+	if err != nil {
+		return address, err
 	}
 
 	// TODO remove in v4
-	if !address.Equal(net.IPv4(127, 0, 0, 1)) { //nolint:gomnd
-		s.warner.Warn(key + " is set to " + value +
+	if address.Unmap().Compare(netip.AddrFrom4([4]byte{127, 0, 0, 1})) != 0 {
+		s.warner.Warn(key + " is set to " + address.String() +
 			" so the DNS over TLS (DoT) server will not be used." +
 			" The default value changed to 127.0.0.1 so it uses the internal DoT serves." +
 			" If the DoT server fails to start, the IPv4 address of the first plaintext DNS server" +

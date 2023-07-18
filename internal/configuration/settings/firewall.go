@@ -2,9 +2,9 @@ package settings
 
 import (
 	"fmt"
-	"net"
+	"net/netip"
 
-	"github.com/qdm12/gluetun/internal/configuration/settings/helpers"
+	"github.com/qdm12/gosettings"
 	"github.com/qdm12/gotree"
 )
 
@@ -12,7 +12,7 @@ import (
 type Firewall struct {
 	VPNInputPorts   []uint16
 	InputPorts      []uint16
-	OutboundSubnets []net.IPNet
+	OutboundSubnets []netip.Prefix
 	Enabled         *bool
 	Debug           *bool
 }
@@ -40,11 +40,11 @@ func hasZeroPort(ports []uint16) (has bool) {
 
 func (f *Firewall) copy() (copied Firewall) {
 	return Firewall{
-		VPNInputPorts:   helpers.CopyUint16Slice(f.VPNInputPorts),
-		InputPorts:      helpers.CopyUint16Slice(f.InputPorts),
-		OutboundSubnets: helpers.CopyIPNetSlice(f.OutboundSubnets),
-		Enabled:         helpers.CopyBoolPtr(f.Enabled),
-		Debug:           helpers.CopyBoolPtr(f.Debug),
+		VPNInputPorts:   gosettings.CopySlice(f.VPNInputPorts),
+		InputPorts:      gosettings.CopySlice(f.InputPorts),
+		OutboundSubnets: gosettings.CopySlice(f.OutboundSubnets),
+		Enabled:         gosettings.CopyPointer(f.Enabled),
+		Debug:           gosettings.CopyPointer(f.Debug),
 	}
 }
 
@@ -53,27 +53,27 @@ func (f *Firewall) copy() (copied Firewall) {
 // It merges values of slices together, even if they
 // are set in the receiver settings.
 func (f *Firewall) mergeWith(other Firewall) {
-	f.VPNInputPorts = helpers.MergeUint16Slices(f.VPNInputPorts, other.VPNInputPorts)
-	f.InputPorts = helpers.MergeUint16Slices(f.InputPorts, other.InputPorts)
-	f.OutboundSubnets = helpers.MergeIPNetsSlices(f.OutboundSubnets, other.OutboundSubnets)
-	f.Enabled = helpers.MergeWithBool(f.Enabled, other.Enabled)
-	f.Debug = helpers.MergeWithBool(f.Debug, other.Debug)
+	f.VPNInputPorts = gosettings.MergeWithSlice(f.VPNInputPorts, other.VPNInputPorts)
+	f.InputPorts = gosettings.MergeWithSlice(f.InputPorts, other.InputPorts)
+	f.OutboundSubnets = gosettings.MergeWithSlice(f.OutboundSubnets, other.OutboundSubnets)
+	f.Enabled = gosettings.MergeWithPointer(f.Enabled, other.Enabled)
+	f.Debug = gosettings.MergeWithPointer(f.Debug, other.Debug)
 }
 
 // overrideWith overrides fields of the receiver
 // settings object with any field set in the other
 // settings.
 func (f *Firewall) overrideWith(other Firewall) {
-	f.VPNInputPorts = helpers.OverrideWithUint16Slice(f.VPNInputPorts, other.VPNInputPorts)
-	f.InputPorts = helpers.OverrideWithUint16Slice(f.InputPorts, other.InputPorts)
-	f.OutboundSubnets = helpers.OverrideWithIPNetsSlice(f.OutboundSubnets, other.OutboundSubnets)
-	f.Enabled = helpers.OverrideWithBool(f.Enabled, other.Enabled)
-	f.Debug = helpers.OverrideWithBool(f.Debug, other.Debug)
+	f.VPNInputPorts = gosettings.OverrideWithSlice(f.VPNInputPorts, other.VPNInputPorts)
+	f.InputPorts = gosettings.OverrideWithSlice(f.InputPorts, other.InputPorts)
+	f.OutboundSubnets = gosettings.OverrideWithSlice(f.OutboundSubnets, other.OutboundSubnets)
+	f.Enabled = gosettings.OverrideWithPointer(f.Enabled, other.Enabled)
+	f.Debug = gosettings.OverrideWithPointer(f.Debug, other.Debug)
 }
 
 func (f *Firewall) setDefaults() {
-	f.Enabled = helpers.DefaultBool(f.Enabled, true)
-	f.Debug = helpers.DefaultBool(f.Debug, false)
+	f.Enabled = gosettings.DefaultPointer(f.Enabled, true)
+	f.Debug = gosettings.DefaultPointer(f.Debug, false)
 }
 
 func (f Firewall) String() string {
@@ -83,7 +83,7 @@ func (f Firewall) String() string {
 func (f Firewall) toLinesNode() (node *gotree.Node) {
 	node = gotree.New("Firewall settings:")
 
-	node.Appendf("Enabled: %s", helpers.BoolPtrToYesNo(f.Enabled))
+	node.Appendf("Enabled: %s", gosettings.BoolToYesNo(f.Enabled))
 	if !*f.Enabled {
 		return node
 	}
@@ -109,7 +109,8 @@ func (f Firewall) toLinesNode() (node *gotree.Node) {
 	if len(f.OutboundSubnets) > 0 {
 		outboundSubnets := node.Appendf("Outbound subnets:")
 		for _, subnet := range f.OutboundSubnets {
-			outboundSubnets.Appendf("%s", subnet)
+			subnet := subnet
+			outboundSubnets.Appendf("%s", &subnet)
 		}
 	}
 

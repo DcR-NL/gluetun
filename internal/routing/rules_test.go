@@ -2,7 +2,7 @@ package routing
 
 import (
 	"errors"
-	"net"
+	"net/netip"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -11,17 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func makeIPNet(t *testing.T, n byte) *net.IPNet {
-	t.Helper()
-	return &net.IPNet{
-		IP:   net.IPv4(n, n, n, 0),
-		Mask: net.IPv4Mask(255, 255, 255, 0),
-	}
+func makeNetipPrefix(n byte) netip.Prefix {
+	const bits = 24
+	return netip.PrefixFrom(netip.AddrFrom4([4]byte{n, n, n, 0}), bits)
 }
 
-func makeIPRule(t *testing.T, src, dst *net.IPNet,
-	table, priority int) *netlink.Rule {
-	t.Helper()
+func makeIPRule(src, dst netip.Prefix,
+	table, priority int) netlink.Rule {
 	rule := netlink.NewRule()
 	rule.Src = src
 	rule.Dst = dst
@@ -42,13 +38,13 @@ func Test_Routing_addIPRule(t *testing.T) {
 
 	type ruleAddCall struct {
 		expected  bool
-		ruleToAdd *netlink.Rule
+		ruleToAdd netlink.Rule
 		err       error
 	}
 
 	testCases := map[string]struct {
-		src      *net.IPNet
-		dst      *net.IPNet
+		src      netip.Prefix
+		dst      netip.Prefix
 		table    int
 		priority int
 		dbgMsg   string
@@ -61,49 +57,49 @@ func Test_Routing_addIPRule(t *testing.T) {
 			ruleList: ruleListCall{
 				err: errDummy,
 			},
-			err: errors.New("cannot list rules: dummy error"),
+			err: errors.New("listing rules: dummy error"),
 		},
 		"rule already exists": {
-			src:      makeIPNet(t, 1),
-			dst:      makeIPNet(t, 2),
+			src:      makeNetipPrefix(1),
+			dst:      makeNetipPrefix(2),
 			table:    99,
 			priority: 99,
 			dbgMsg:   "ip rule add from 1.1.1.0/24 to 2.2.2.0/24 lookup 99 pref 99",
 			ruleList: ruleListCall{
 				rules: []netlink.Rule{
-					*makeIPRule(t, makeIPNet(t, 2), makeIPNet(t, 2), 99, 99),
-					*makeIPRule(t, makeIPNet(t, 1), makeIPNet(t, 2), 99, 99),
+					makeIPRule(makeNetipPrefix(2), makeNetipPrefix(2), 99, 99),
+					makeIPRule(makeNetipPrefix(1), makeNetipPrefix(2), 99, 99),
 				},
 			},
 		},
 		"add rule error": {
-			src:      makeIPNet(t, 1),
-			dst:      makeIPNet(t, 2),
+			src:      makeNetipPrefix(1),
+			dst:      makeNetipPrefix(2),
 			table:    99,
 			priority: 99,
 			dbgMsg:   "ip rule add from 1.1.1.0/24 to 2.2.2.0/24 lookup 99 pref 99",
 			ruleAdd: ruleAddCall{
 				expected:  true,
-				ruleToAdd: makeIPRule(t, makeIPNet(t, 1), makeIPNet(t, 2), 99, 99),
+				ruleToAdd: makeIPRule(makeNetipPrefix(1), makeNetipPrefix(2), 99, 99),
 				err:       errDummy,
 			},
-			err: errors.New("cannot add rule ip rule 99: from 1.1.1.0/24 to 2.2.2.0/24 table 99: dummy error"),
+			err: errors.New("adding rule ip rule 99: from 1.1.1.0/24 to 2.2.2.0/24 table 99: dummy error"),
 		},
 		"add rule success": {
-			src:      makeIPNet(t, 1),
-			dst:      makeIPNet(t, 2),
+			src:      makeNetipPrefix(1),
+			dst:      makeNetipPrefix(2),
 			table:    99,
 			priority: 99,
 			dbgMsg:   "ip rule add from 1.1.1.0/24 to 2.2.2.0/24 lookup 99 pref 99",
 			ruleList: ruleListCall{
 				rules: []netlink.Rule{
-					*makeIPRule(t, makeIPNet(t, 2), makeIPNet(t, 2), 99, 99),
-					*makeIPRule(t, makeIPNet(t, 1), makeIPNet(t, 2), 101, 101),
+					makeIPRule(makeNetipPrefix(2), makeNetipPrefix(2), 99, 99),
+					makeIPRule(makeNetipPrefix(1), makeNetipPrefix(2), 101, 101),
 				},
 			},
 			ruleAdd: ruleAddCall{
 				expected:  true,
-				ruleToAdd: makeIPRule(t, makeIPNet(t, 1), makeIPNet(t, 2), 99, 99),
+				ruleToAdd: makeIPRule(makeNetipPrefix(1), makeNetipPrefix(2), 99, 99),
 			},
 		},
 	}
@@ -118,7 +114,7 @@ func Test_Routing_addIPRule(t *testing.T) {
 			logger.EXPECT().Debug(testCase.dbgMsg)
 
 			netLinker := NewMockNetLinker(ctrl)
-			netLinker.EXPECT().RuleList(netlink.FAMILY_ALL).
+			netLinker.EXPECT().RuleList(netlink.FamilyAll).
 				Return(testCase.ruleList.rules, testCase.ruleList.err)
 			if testCase.ruleAdd.expected {
 				netLinker.EXPECT().RuleAdd(testCase.ruleAdd.ruleToAdd).
@@ -155,13 +151,13 @@ func Test_Routing_deleteIPRule(t *testing.T) {
 
 	type ruleDelCall struct {
 		expected  bool
-		ruleToDel *netlink.Rule
+		ruleToDel netlink.Rule
 		err       error
 	}
 
 	testCases := map[string]struct {
-		src      *net.IPNet
-		dst      *net.IPNet
+		src      netip.Prefix
+		dst      netip.Prefix
 		table    int
 		priority int
 		dbgMsg   string
@@ -174,53 +170,53 @@ func Test_Routing_deleteIPRule(t *testing.T) {
 			ruleList: ruleListCall{
 				err: errDummy,
 			},
-			err: errors.New("cannot list rules: dummy error"),
+			err: errors.New("listing rules: dummy error"),
 		},
 		"rule delete error": {
-			src:      makeIPNet(t, 1),
-			dst:      makeIPNet(t, 2),
+			src:      makeNetipPrefix(1),
+			dst:      makeNetipPrefix(2),
 			table:    99,
 			priority: 99,
 			dbgMsg:   "ip rule del from 1.1.1.0/24 to 2.2.2.0/24 lookup 99 pref 99",
 			ruleList: ruleListCall{
 				rules: []netlink.Rule{
-					*makeIPRule(t, makeIPNet(t, 1), makeIPNet(t, 2), 99, 99),
+					makeIPRule(makeNetipPrefix(1), makeNetipPrefix(2), 99, 99),
 				},
 			},
 			ruleDel: ruleDelCall{
 				expected:  true,
-				ruleToDel: makeIPRule(t, makeIPNet(t, 1), makeIPNet(t, 2), 99, 99),
+				ruleToDel: makeIPRule(makeNetipPrefix(1), makeNetipPrefix(2), 99, 99),
 				err:       errDummy,
 			},
-			err: errors.New("cannot delete rule ip rule 99: from 1.1.1.0/24 to 2.2.2.0/24 table 99: dummy error"),
+			err: errors.New("deleting rule ip rule 99: from 1.1.1.0/24 to 2.2.2.0/24 table 99: dummy error"),
 		},
 		"rule deleted": {
-			src:      makeIPNet(t, 1),
-			dst:      makeIPNet(t, 2),
+			src:      makeNetipPrefix(1),
+			dst:      makeNetipPrefix(2),
 			table:    99,
 			priority: 99,
 			dbgMsg:   "ip rule del from 1.1.1.0/24 to 2.2.2.0/24 lookup 99 pref 99",
 			ruleList: ruleListCall{
 				rules: []netlink.Rule{
-					*makeIPRule(t, makeIPNet(t, 2), makeIPNet(t, 2), 99, 99),
-					*makeIPRule(t, makeIPNet(t, 1), makeIPNet(t, 2), 99, 99),
+					makeIPRule(makeNetipPrefix(2), makeNetipPrefix(2), 99, 99),
+					makeIPRule(makeNetipPrefix(1), makeNetipPrefix(2), 99, 99),
 				},
 			},
 			ruleDel: ruleDelCall{
 				expected:  true,
-				ruleToDel: makeIPRule(t, makeIPNet(t, 1), makeIPNet(t, 2), 99, 99),
+				ruleToDel: makeIPRule(makeNetipPrefix(1), makeNetipPrefix(2), 99, 99),
 			},
 		},
 		"rule does not exist": {
-			src:      makeIPNet(t, 1),
-			dst:      makeIPNet(t, 2),
+			src:      makeNetipPrefix(1),
+			dst:      makeNetipPrefix(2),
 			table:    99,
 			priority: 99,
 			dbgMsg:   "ip rule del from 1.1.1.0/24 to 2.2.2.0/24 lookup 99 pref 99",
 			ruleList: ruleListCall{
 				rules: []netlink.Rule{
-					*makeIPRule(t, makeIPNet(t, 2), makeIPNet(t, 2), 99, 99),
-					*makeIPRule(t, makeIPNet(t, 1), makeIPNet(t, 2), 101, 101),
+					makeIPRule(makeNetipPrefix(2), makeNetipPrefix(2), 99, 99),
+					makeIPRule(makeNetipPrefix(1), makeNetipPrefix(2), 101, 101),
 				},
 			},
 		},
@@ -236,7 +232,7 @@ func Test_Routing_deleteIPRule(t *testing.T) {
 			logger.EXPECT().Debug(testCase.dbgMsg)
 
 			netLinker := NewMockNetLinker(ctrl)
-			netLinker.EXPECT().RuleList(netlink.FAMILY_ALL).
+			netLinker.EXPECT().RuleList(netlink.FamilyAll).
 				Return(testCase.ruleList.rules, testCase.ruleList.err)
 			if testCase.ruleDel.expected {
 				netLinker.EXPECT().RuleDel(testCase.ruleDel.ruleToDel).
@@ -266,8 +262,8 @@ func Test_ruleDbgMsg(t *testing.T) {
 
 	testCases := map[string]struct {
 		add      bool
-		src      *net.IPNet
-		dst      *net.IPNet
+		src      netip.Prefix
+		dst      netip.Prefix
 		table    int
 		priority int
 		dbgMsg   string
@@ -277,15 +273,15 @@ func Test_ruleDbgMsg(t *testing.T) {
 		},
 		"add rule": {
 			add:      true,
-			src:      makeIPNet(t, 1),
-			dst:      makeIPNet(t, 2),
+			src:      makeNetipPrefix(1),
+			dst:      makeNetipPrefix(2),
 			table:    100,
 			priority: 101,
 			dbgMsg:   "ip rule add from 1.1.1.0/24 to 2.2.2.0/24 lookup 100 pref 101",
 		},
 		"del rule": {
-			src:      makeIPNet(t, 1),
-			dst:      makeIPNet(t, 2),
+			src:      makeNetipPrefix(1),
+			dst:      makeNetipPrefix(2),
 			table:    100,
 			priority: 101,
 			dbgMsg:   "ip rule del from 1.1.1.0/24 to 2.2.2.0/24 lookup 100 pref 101",
@@ -309,38 +305,79 @@ func Test_rulesAreEqual(t *testing.T) {
 	t.Parallel()
 
 	testCases := map[string]struct {
-		a     *netlink.Rule
-		b     *netlink.Rule
+		a     netlink.Rule
+		b     netlink.Rule
 		equal bool
 	}{
-		"both nil": {
+		"both_empty": {
 			equal: true,
 		},
-		"first nil": {
-			b: &netlink.Rule{},
-		},
-		"second nil": {
-			a: &netlink.Rule{},
-		},
-		"both not nil": {
-			a:     &netlink.Rule{},
-			b:     &netlink.Rule{},
-			equal: true,
-		},
-		"both equal": {
-			a: &netlink.Rule{
-				Src: &net.IPNet{
-					IP:   net.IPv4(1, 1, 1, 1),
-					Mask: net.IPv4Mask(255, 255, 255, 0),
-				},
+		"not_equal_by_src": {
+			a: netlink.Rule{
+				Src:      netip.PrefixFrom(netip.AddrFrom4([4]byte{9, 9, 9, 9}), 24),
+				Dst:      netip.PrefixFrom(netip.AddrFrom4([4]byte{2, 2, 2, 2}), 32),
 				Priority: 100,
 				Table:    101,
 			},
-			b: &netlink.Rule{
-				Src: &net.IPNet{
-					IP:   net.IPv4(1, 1, 1, 1),
-					Mask: net.IPv4Mask(255, 255, 255, 0),
-				},
+			b: netlink.Rule{
+				Src:      netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 24),
+				Dst:      netip.PrefixFrom(netip.AddrFrom4([4]byte{2, 2, 2, 2}), 32),
+				Priority: 100,
+				Table:    101,
+			},
+		},
+		"not_equal_by_dst": {
+			a: netlink.Rule{
+				Src:      netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 24),
+				Dst:      netip.PrefixFrom(netip.AddrFrom4([4]byte{9, 9, 9, 9}), 32),
+				Priority: 100,
+				Table:    101,
+			},
+			b: netlink.Rule{
+				Src:      netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 24),
+				Dst:      netip.PrefixFrom(netip.AddrFrom4([4]byte{2, 2, 2, 2}), 32),
+				Priority: 100,
+				Table:    101,
+			},
+		},
+		"not_equal_by_priority": {
+			a: netlink.Rule{
+				Src:      netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 24),
+				Dst:      netip.PrefixFrom(netip.AddrFrom4([4]byte{2, 2, 2, 2}), 32),
+				Priority: 999,
+				Table:    101,
+			},
+			b: netlink.Rule{
+				Src:      netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 24),
+				Dst:      netip.PrefixFrom(netip.AddrFrom4([4]byte{2, 2, 2, 2}), 32),
+				Priority: 100,
+				Table:    101,
+			},
+		},
+		"not_equal_by_table": {
+			a: netlink.Rule{
+				Src:      netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 24),
+				Dst:      netip.PrefixFrom(netip.AddrFrom4([4]byte{2, 2, 2, 2}), 32),
+				Priority: 100,
+				Table:    999,
+			},
+			b: netlink.Rule{
+				Src:      netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 24),
+				Dst:      netip.PrefixFrom(netip.AddrFrom4([4]byte{2, 2, 2, 2}), 32),
+				Priority: 100,
+				Table:    101,
+			},
+		},
+		"equal": {
+			a: netlink.Rule{
+				Src:      netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 24),
+				Dst:      netip.PrefixFrom(netip.AddrFrom4([4]byte{2, 2, 2, 2}), 32),
+				Priority: 100,
+				Table:    101,
+			},
+			b: netlink.Rule{
+				Src:      netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 24),
+				Dst:      netip.PrefixFrom(netip.AddrFrom4([4]byte{2, 2, 2, 2}), 32),
 				Priority: 100,
 				Table:    101,
 			},
@@ -360,58 +397,39 @@ func Test_rulesAreEqual(t *testing.T) {
 	}
 }
 
-func Test_ipNetsAreEqual(t *testing.T) {
+func Test_ipPrefixesAreEqual(t *testing.T) {
 	t.Parallel()
 
 	testCases := map[string]struct {
-		a     *net.IPNet
-		b     *net.IPNet
+		a     netip.Prefix
+		b     netip.Prefix
 		equal bool
 	}{
-		"both nil": {
+		"both_not_valid": {
 			equal: true,
 		},
-		"first nil": {
-			b: &net.IPNet{},
+		"first_not_valid": {
+			b: netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 24),
 		},
-		"second nil": {
-			a: &net.IPNet{},
+		"second_not_valid": {
+			a: netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 24),
 		},
-		"both not nil": {
-			a:     &net.IPNet{},
-			b:     &net.IPNet{},
+		"both_equal": {
+			a:     netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 24),
+			b:     netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 24),
 			equal: true,
 		},
-		"both equal": {
-			a: &net.IPNet{
-				IP:   net.IPv4(1, 1, 1, 1),
-				Mask: net.IPv4Mask(255, 255, 255, 0),
-			},
-			b: &net.IPNet{
-				IP:   net.IPv4(1, 1, 1, 1),
-				Mask: net.IPv4Mask(255, 255, 255, 0),
-			},
-			equal: true,
+		"both_not_equal_by_IP": {
+			a: netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 24),
+			b: netip.PrefixFrom(netip.AddrFrom4([4]byte{2, 2, 2, 2}), 24),
 		},
-		"both not equal by IP": {
-			a: &net.IPNet{
-				IP:   net.IPv4(1, 1, 1, 1),
-				Mask: net.IPv4Mask(255, 255, 255, 0),
-			},
-			b: &net.IPNet{
-				IP:   net.IPv4(2, 2, 2, 2),
-				Mask: net.IPv4Mask(255, 255, 255, 0),
-			},
+		"both_not_equal_by_bits": {
+			a: netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 24),
+			b: netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 32),
 		},
-		"both not equal by mask": {
-			a: &net.IPNet{
-				IP:   net.IPv4(1, 1, 1, 1),
-				Mask: net.IPv4Mask(255, 255, 255, 255),
-			},
-			b: &net.IPNet{
-				IP:   net.IPv4(1, 1, 1, 1),
-				Mask: net.IPv4Mask(255, 255, 0, 0),
-			},
+		"both_not_equal_by_IP_and_bits": {
+			a: netip.PrefixFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 24),
+			b: netip.PrefixFrom(netip.AddrFrom4([4]byte{2, 2, 2, 2}), 32),
 		},
 	}
 
@@ -420,7 +438,7 @@ func Test_ipNetsAreEqual(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			equal := ipNetsAreEqual(testCase.a, testCase.b)
+			equal := ipPrefixesAreEqual(testCase.a, testCase.b)
 
 			assert.Equal(t, testCase.equal, equal)
 		})

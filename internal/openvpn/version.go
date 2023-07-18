@@ -8,12 +8,12 @@ import (
 	"strings"
 )
 
-func (c *Configurator) Version24(ctx context.Context) (version string, err error) {
-	return c.version(ctx, binOpenvpn24)
-}
-
 func (c *Configurator) Version25(ctx context.Context) (version string, err error) {
 	return c.version(ctx, binOpenvpn25)
+}
+
+func (c *Configurator) Version26(ctx context.Context) (version string, err error) {
+	return c.version(ctx, binOpenvpn26)
 }
 
 var ErrVersionTooShort = errors.New("version output is too short")

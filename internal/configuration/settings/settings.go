@@ -3,6 +3,9 @@ package settings
 import (
 	"fmt"
 
+	"github.com/qdm12/gluetun/internal/configuration/settings/helpers"
+	"github.com/qdm12/gluetun/internal/constants/providers"
+	"github.com/qdm12/gluetun/internal/constants/vpn"
 	"github.com/qdm12/gluetun/internal/models"
 	"github.com/qdm12/gluetun/internal/pprof"
 	"github.com/qdm12/gotree"
@@ -31,7 +34,7 @@ type Storage interface {
 // Validate validates all the settings and returns an error
 // if one of them is not valid.
 // TODO v4 remove pointer for receiver (because of Surfshark).
-func (s *Settings) Validate(storage Storage) (err error) {
+func (s *Settings) Validate(storage Storage, ipv6Supported bool) (err error) {
 	nameToValidation := map[string]func() error{
 		"control server":  s.ControlServer.validate,
 		"dns":             s.DNS.validate,
@@ -46,7 +49,7 @@ func (s *Settings) Validate(storage Storage) (err error) {
 		"version":         s.Version.validate,
 		// Pprof validation done in pprof constructor
 		"VPN": func() error {
-			return s.VPN.Validate(storage)
+			return s.VPN.Validate(storage, ipv6Supported)
 		},
 	}
 
@@ -95,7 +98,7 @@ func (s *Settings) MergeWith(other Settings) {
 }
 
 func (s *Settings) OverrideWith(other Settings,
-	storage Storage) (err error) {
+	storage Storage, ipv6Supported bool) (err error) {
 	patchedSettings := s.copy()
 	patchedSettings.ControlServer.overrideWith(other.ControlServer)
 	patchedSettings.DNS.overrideWith(other.DNS)
@@ -110,7 +113,7 @@ func (s *Settings) OverrideWith(other Settings,
 	patchedSettings.Version.overrideWith(other.Version)
 	patchedSettings.VPN.OverrideWith(other.VPN)
 	patchedSettings.Pprof.OverrideWith(other.Pprof)
-	err = patchedSettings.Validate(storage)
+	err = patchedSettings.Validate(storage, ipv6Supported)
 	if err != nil {
 		return err
 	}
@@ -156,4 +159,25 @@ func (s Settings) toLinesNode() (node *gotree.Node) {
 	node.AppendNode(s.Pprof.ToLinesNode())
 
 	return node
+}
+
+func (s Settings) Warnings() (warnings []string) {
+	if *s.VPN.Provider.Name == providers.HideMyAss {
+		warnings = append(warnings, "HideMyAss dropped support for Linux OpenVPN "+
+			" so this will likely not work anymore. See https://github.com/qdm12/gluetun/issues/1498.")
+	}
+
+	if helpers.IsOneOf(*s.VPN.Provider.Name, providers.SlickVPN) &&
+		s.VPN.Type == vpn.OpenVPN {
+		warnings = append(warnings, "OpenVPN 2.5 uses OpenSSL 3 "+
+			"which prohibits the usage of weak security in today's standards. "+
+			*s.VPN.Provider.Name+" uses weak security which is out "+
+			"of Gluetun's control so the only workaround is to allow such weaknesses "+
+			`using the OpenVPN option tls-cipher "DEFAULT:@SECLEVEL=0". `+
+			"You might want to reach to your provider so they upgrade their certificates. "+
+			"Once this is done, you will have to let the Gluetun maintainers know "+
+			"by creating an issue, attaching the new certificate and we will update Gluetun.")
+	}
+
+	return warnings
 }

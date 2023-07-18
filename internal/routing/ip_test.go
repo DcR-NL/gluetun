@@ -1,14 +1,14 @@
 package routing
 
 import (
-	"net"
+	"net/netip"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func Test_IPIsPrivate(t *testing.T) {
+func Test_ipIsPrivate(t *testing.T) {
 	t.Parallel()
 
 	testCases := map[string]struct {
@@ -87,10 +87,10 @@ func Test_IPIsPrivate(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			ip := net.ParseIP(testCase.ipString)
-			require.NotNil(t, ip)
+			ip, err := netip.ParseAddr(testCase.ipString)
+			require.NoError(t, err)
 
-			isPrivate := IPIsPrivate(ip)
+			isPrivate := ipIsPrivate(ip)
 
 			assert.Equal(t, testCase.isPrivate, isPrivate)
 		})

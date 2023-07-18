@@ -3,7 +3,7 @@ package wevpn
 import (
 	"errors"
 	"math/rand"
-	"net"
+	"net/netip"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -37,11 +37,11 @@ func Test_Provider_GetConnection(t *testing.T) {
 		"error": {
 			storageErr: errTest,
 			errWrapped: errTest,
-			errMessage: "cannot filter servers: test error",
+			errMessage: "filtering servers: test error",
 		},
 		"default OpenVPN TCP port": {
 			filteredServers: []models.Server{
-				{IPs: []net.IP{net.IPv4(1, 1, 1, 1)}},
+				{IPs: []netip.Addr{netip.AddrFrom4([4]byte{1, 1, 1, 1})}},
 			},
 			selection: settings.ServerSelection{
 				OpenVPN: settings.OpenVPNSelection{
@@ -50,14 +50,14 @@ func Test_Provider_GetConnection(t *testing.T) {
 			}.WithDefaults(provider),
 			connection: models.Connection{
 				Type:     vpn.OpenVPN,
-				IP:       net.IPv4(1, 1, 1, 1),
+				IP:       netip.AddrFrom4([4]byte{1, 1, 1, 1}),
 				Port:     1195,
 				Protocol: constants.TCP,
 			},
 		},
 		"default OpenVPN UDP port": {
 			filteredServers: []models.Server{
-				{IPs: []net.IP{net.IPv4(1, 1, 1, 1)}},
+				{IPs: []netip.Addr{netip.AddrFrom4([4]byte{1, 1, 1, 1})}},
 			},
 			selection: settings.ServerSelection{
 				OpenVPN: settings.OpenVPNSelection{
@@ -66,14 +66,14 @@ func Test_Provider_GetConnection(t *testing.T) {
 			}.WithDefaults(provider),
 			connection: models.Connection{
 				Type:     vpn.OpenVPN,
-				IP:       net.IPv4(1, 1, 1, 1),
+				IP:       netip.AddrFrom4([4]byte{1, 1, 1, 1}),
 				Port:     1194,
 				Protocol: constants.UDP,
 			},
 		},
 		"default Wireguard port": {
 			filteredServers: []models.Server{
-				{IPs: []net.IP{net.IPv4(1, 1, 1, 1)}, WgPubKey: "x"},
+				{IPs: []netip.Addr{netip.AddrFrom4([4]byte{1, 1, 1, 1})}, WgPubKey: "x"},
 			},
 			selection: settings.ServerSelection{
 				VPN: vpn.Wireguard,

@@ -2,17 +2,36 @@ package wireguard
 
 import (
 	"fmt"
-	"net"
+	"net/netip"
+	"strings"
 
 	"github.com/qdm12/gluetun/internal/netlink"
 )
 
-// TODO add IPv6 route if IPv6 is supported
-
-func (w *Wireguard) addRoute(link netlink.Link, dst *net.IPNet,
+func (w *Wireguard) addRoutes(link netlink.Link, destinations []netip.Prefix,
 	firewallMark int) (err error) {
-	route := &netlink.Route{
-		LinkIndex: link.Attrs().Index,
+	for _, dst := range destinations {
+		err = w.addRoute(link, dst, firewallMark)
+		if err == nil {
+			continue
+		}
+
+		if dst.Addr().Is6() && strings.Contains(err.Error(), "permission denied") {
+			w.logger.Errorf("cannot add route for IPv6 due to a permission denial. "+
+				"Ignoring and continuing execution; "+
+				"Please report to https://github.com/qdm12/gluetun/issues/998 if you find a fix. "+
+				"Full error string: %s", err)
+			continue
+		}
+		return fmt.Errorf("adding route for destination %s: %w", dst, err)
+	}
+	return nil
+}
+
+func (w *Wireguard) addRoute(link netlink.Link, dst netip.Prefix,
+	firewallMark int) (err error) {
+	route := netlink.Route{
+		LinkIndex: link.Index,
 		Dst:       dst,
 		Table:     firewallMark,
 	}
@@ -20,8 +39,8 @@ func (w *Wireguard) addRoute(link netlink.Link, dst *net.IPNet,
 	err = w.netlink.RouteAdd(route)
 	if err != nil {
 		return fmt.Errorf(
-			"cannot add route for link %s, destination %s and table %d: %w",
-			link.Attrs().Name, dst, firewallMark, err)
+			"adding route for link %s, destination %s and table %d: %w",
+			link.Name, dst, firewallMark, err)
 	}
 
 	return err

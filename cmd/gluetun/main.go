@@ -77,7 +77,8 @@ func main() {
 
 	args := os.Args
 	tun := tun.New()
-	netLinker := netlink.New()
+	netLinkDebugLogger := logger.New(log.SetComponent("netlink"))
+	netLinker := netlink.New(netLinkDebugLogger)
 	cli := cli.New()
 	cmder := command.NewCmder()
 
@@ -91,12 +92,13 @@ func main() {
 		errorCh <- _main(ctx, buildInfo, args, logger, muxReader, tun, netLinker, cmder, cli)
 	}()
 
+	var err error
 	select {
 	case signal := <-signalCh:
 		fmt.Println("")
 		logger.Warn("Caught OS signal " + signal.String() + ", shutting down")
 		cancel()
-	case err := <-errorCh:
+	case err = <-errorCh:
 		close(errorCh)
 		if err == nil { // expected exit such as healthcheck
 			os.Exit(0)
@@ -108,22 +110,27 @@ func main() {
 	const shutdownGracePeriod = 5 * time.Second
 	timer := time.NewTimer(shutdownGracePeriod)
 	select {
-	case err := <-errorCh:
+	case shutdownErr := <-errorCh:
 		if !timer.Stop() {
 			<-timer.C
 		}
-		if err == nil {
-			logger.Info("Shutdown successful")
-			os.Exit(0)
+		if shutdownErr != nil {
+			logger.Warnf("Shutdown not completed gracefully: %s", shutdownErr)
+			os.Exit(1)
 		}
-		logger.Warnf("Shutdown not completed gracefully: %s", err)
+
+		logger.Info("Shutdown successful")
+		if err != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
 	case <-timer.C:
 		logger.Warn("Shutdown timed out")
+		os.Exit(1)
 	case signal := <-signalCh:
 		logger.Warn("Caught OS signal " + signal.String() + ", forcing shut down")
+		os.Exit(1)
 	}
-
-	os.Exit(1)
 }
 
 var (
@@ -152,7 +159,7 @@ func _main(ctx context.Context, buildInfo models.BuildInformation,
 		}
 	}
 
-	announcementExp, err := time.Parse(time.RFC3339, "2021-02-15T00:00:00Z")
+	announcementExp, err := time.Parse(time.RFC3339, "2023-07-01T00:00:00Z")
 	if err != nil {
 		return err
 	}
@@ -163,7 +170,7 @@ func _main(ctx context.Context, buildInfo models.BuildInformation,
 		Version:      buildInfo.Version,
 		Commit:       buildInfo.Commit,
 		BuildDate:    buildInfo.Created,
-		Announcement: "Large settings parsing refactoring merged on 2022-01-06, please report any issue!",
+		Announcement: "Wiki moved to https://github.com/qdm12/gluetun-wiki",
 		AnnounceExp:  announcementExp,
 		// Sponsor information
 		PaypalUser:    "qmcgaw",
@@ -183,6 +190,7 @@ func _main(ctx context.Context, buildInfo models.BuildInformation,
 	// - firewall Debug and Enabled are booleans parsed from source
 
 	logger.Patch(log.SetLevel(*allSettings.Log.Level))
+	netLinker.PatchLoggerLevel(*allSettings.Log.Level)
 
 	routingLogger := logger.New(log.SetComponent("routing"))
 	if *allSettings.Firewall.Debug { // To remove in v4
@@ -224,7 +232,12 @@ func _main(ctx context.Context, buildInfo models.BuildInformation,
 		return err
 	}
 
-	err = allSettings.Validate(storage)
+	ipv6Supported, err := netLinker.IsIPv6Supported()
+	if err != nil {
+		return fmt.Errorf("checking for IPv6 support: %w", err)
+	}
+
+	err = allSettings.Validate(storage, ipv6Supported)
 	if err != nil {
 		return err
 	}
@@ -232,7 +245,7 @@ func _main(ctx context.Context, buildInfo models.BuildInformation,
 	allSettings.Pprof.HTTPServer.Logger = logger.New(log.SetComponent("pprof"))
 	pprofServer, err := pprof.New(allSettings.Pprof)
 	if err != nil {
-		return fmt.Errorf("cannot create Pprof server: %w", err)
+		return fmt.Errorf("creating Pprof server: %w", err)
 	}
 
 	puid, pgid := int(*allSettings.System.PUID), int(*allSettings.System.PGID)
@@ -251,8 +264,8 @@ func _main(ctx context.Context, buildInfo models.BuildInformation,
 
 	err = printVersions(ctx, logger, []printVersionElement{
 		{name: "Alpine", getVersion: alpineConf.Version},
-		{name: "OpenVPN 2.4", getVersion: ovpnConf.Version24},
 		{name: "OpenVPN 2.5", getVersion: ovpnConf.Version25},
+		{name: "OpenVPN 2.6", getVersion: ovpnConf.Version26},
 		{name: "Unbound", getVersion: dnsConf.Version},
 		{name: "IPtables", getVersion: func(ctx context.Context) (version string, err error) {
 			return firewall.Version(ctx, cmder)
@@ -264,6 +277,10 @@ func _main(ctx context.Context, buildInfo models.BuildInformation,
 
 	logger.Info(allSettings.String())
 
+	for _, warning := range allSettings.Warnings() {
+		logger.Warn(warning)
+	}
+
 	if err := os.MkdirAll("/tmp/gluetun", 0644); err != nil {
 		return err
 	}
@@ -274,7 +291,7 @@ func _main(ctx context.Context, buildInfo models.BuildInformation,
 	const defaultUsername = "nonrootuser"
 	nonRootUsername, err := alpineConf.CreateUser(defaultUsername, puid)
 	if err != nil {
-		return fmt.Errorf("cannot create user: %w", err)
+		return fmt.Errorf("creating user: %w", err)
 	}
 	if nonRootUsername != defaultUsername {
 		logger.Info("using existing username " + nonRootUsername + " corresponding to user id " + fmt.Sprint(puid))
@@ -288,22 +305,11 @@ func _main(ctx context.Context, buildInfo models.BuildInformation,
 		return err
 	}
 
-	ipv6Supported, err := netLinker.IsIPv6Supported()
-	if err != nil {
-		return fmt.Errorf("checking for IPv6 support: %w", err)
-	}
-
-	if ipv6Supported {
-		logger.Info("IPv6 is supported")
-	} else {
-		logger.Info("IPv6 is not supported")
-	}
-
 	if err := routingConf.Setup(); err != nil {
 		if strings.Contains(err.Error(), "operation not permitted") {
 			logger.Warn("💡 Tip: Are you passing NET_ADMIN capability to gluetun?")
 		}
-		return fmt.Errorf("cannot setup routing: %w", err)
+		return fmt.Errorf("setting up routing: %w", err)
 	}
 	defer func() {
 		routingLogger.Info("routing cleanup...")
@@ -317,6 +323,11 @@ func _main(ctx context.Context, buildInfo models.BuildInformation,
 	}
 	if err := routingConf.SetOutboundRoutes(allSettings.Firewall.OutboundSubnets); err != nil {
 		return err
+	}
+
+	err = routingConf.AddLocalRules(localNetworks)
+	if err != nil {
+		return fmt.Errorf("adding local rules: %w", err)
 	}
 
 	const tunDevice = "/dev/net/tun"
@@ -449,9 +460,10 @@ func _main(ctx context.Context, buildInfo models.BuildInformation,
 		"http server", goroutine.OptionTimeout(defaultShutdownTimeout))
 	httpServer, err := server.New(httpServerCtx, controlServerAddress, controlServerLogging,
 		logger.New(log.SetComponent("http server")),
-		buildInfo, vpnLooper, portForwardLooper, unboundLooper, updaterLooper, publicIPLooper, storage)
+		buildInfo, vpnLooper, portForwardLooper, unboundLooper, updaterLooper, publicIPLooper,
+		storage, ipv6Supported)
 	if err != nil {
-		return fmt.Errorf("cannot setup control server: %w", err)
+		return fmt.Errorf("setting up control server: %w", err)
 	}
 	httpServerReady := make(chan struct{})
 	go httpServer.Run(httpServerCtx, httpServerReady, httpServerDone)
@@ -498,7 +510,7 @@ func printVersions(ctx context.Context, logger infoer,
 	for _, element := range elements {
 		version, err := element.getVersion(ctx)
 		if err != nil {
-			return err
+			return fmt.Errorf("getting %s version: %w", element.name, err)
 		}
 		logger.Info(element.name + " version: " + version)
 	}
@@ -513,35 +525,35 @@ type netLinker interface {
 	Linker
 	IsWireguardSupported() (ok bool, err error)
 	IsIPv6Supported() (ok bool, err error)
+	PatchLoggerLevel(level log.Level)
 }
 
 type Addresser interface {
 	AddrList(link netlink.Link, family int) (
 		addresses []netlink.Addr, err error)
-	AddrAdd(link netlink.Link, addr *netlink.Addr) error
+	AddrReplace(link netlink.Link, addr netlink.Addr) error
 }
 
 type Router interface {
-	RouteList(link netlink.Link, family int) (
-		routes []netlink.Route, err error)
-	RouteAdd(route *netlink.Route) error
-	RouteDel(route *netlink.Route) error
-	RouteReplace(route *netlink.Route) error
+	RouteList(family int) (routes []netlink.Route, err error)
+	RouteAdd(route netlink.Route) error
+	RouteDel(route netlink.Route) error
+	RouteReplace(route netlink.Route) error
 }
 
 type Ruler interface {
 	RuleList(family int) (rules []netlink.Rule, err error)
-	RuleAdd(rule *netlink.Rule) error
-	RuleDel(rule *netlink.Rule) error
+	RuleAdd(rule netlink.Rule) error
+	RuleDel(rule netlink.Rule) error
 }
 
 type Linker interface {
 	LinkList() (links []netlink.Link, err error)
 	LinkByName(name string) (link netlink.Link, err error)
 	LinkByIndex(index int) (link netlink.Link, err error)
-	LinkAdd(link netlink.Link) (err error)
+	LinkAdd(link netlink.Link) (linkIndex int, err error)
 	LinkDel(link netlink.Link) (err error)
-	LinkSetUp(link netlink.Link) (err error)
+	LinkSetUp(link netlink.Link) (linkIndex int, err error)
 	LinkSetDown(link netlink.Link) (err error)
 }
 

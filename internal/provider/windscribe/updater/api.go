@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"time"
 )
@@ -32,10 +32,10 @@ type groupData struct {
 }
 
 type serverData struct {
-	Hostname string `json:"hostname"`
-	IP       net.IP `json:"ip"`
-	IP2      net.IP `json:"ip2"`
-	IP3      net.IP `json:"ip3"`
+	Hostname string     `json:"hostname"`
+	IP       netip.Addr `json:"ip"`
+	IP2      netip.Addr `json:"ip2"`
+	IP3      netip.Addr `json:"ip3"`
 }
 
 func fetchAPI(ctx context.Context, client *http.Client) (
@@ -62,7 +62,7 @@ func fetchAPI(ctx context.Context, client *http.Client) (
 
 	decoder := json.NewDecoder(response.Body)
 	if err := decoder.Decode(&data); err != nil {
-		return data, fmt.Errorf("failed unmarshaling response body: %w", err)
+		return data, fmt.Errorf("decoding response body: %w", err)
 	}
 
 	return data, nil

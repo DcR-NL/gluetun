@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"strings"
@@ -95,14 +95,11 @@ func (c *Config) setIPv4AllPolicies(ctx context.Context, policy string) error {
 	default:
 		return fmt.Errorf("%w: %s", ErrPolicyUnknown, policy)
 	}
-	if err := c.runIptablesInstructions(ctx, []string{
+	return c.runIptablesInstructions(ctx, []string{
 		"--policy INPUT " + policy,
 		"--policy OUTPUT " + policy,
 		"--policy FORWARD " + policy,
-	}); err != nil {
-		return err
-	}
-	return nil
+	})
 }
 
 func (c *Config) acceptInputThroughInterface(ctx context.Context, intf string, remove bool) error {
@@ -111,9 +108,8 @@ func (c *Config) acceptInputThroughInterface(ctx context.Context, intf string, r
 	))
 }
 
-func (c *Config) acceptInputToSubnet(ctx context.Context, intf string, destination net.IPNet, remove bool) error {
-	isIP4Subnet := destination.IP.To4() != nil
-
+func (c *Config) acceptInputToSubnet(ctx context.Context, intf string,
+	destination netip.Prefix, remove bool) error {
 	interfaceFlag := "-i " + intf
 	if intf == "*" { // all interfaces
 		interfaceFlag = ""
@@ -122,7 +118,7 @@ func (c *Config) acceptInputToSubnet(ctx context.Context, intf string, destinati
 	instruction := fmt.Sprintf("%s INPUT %s -d %s -j ACCEPT",
 		appendOrDelete(remove), interfaceFlag, destination.String())
 
-	if isIP4Subnet {
+	if destination.Addr().Is4() {
 		return c.runIptablesInstruction(ctx, instruction)
 	}
 	if c.ip6Tables == "" {
@@ -149,8 +145,7 @@ func (c *Config) acceptOutputTrafficToVPN(ctx context.Context,
 	instruction := fmt.Sprintf("%s OUTPUT -d %s -o %s -p %s -m %s --dport %d -j ACCEPT",
 		appendOrDelete(remove), connection.IP, defaultInterface, connection.Protocol,
 		connection.Protocol, connection.Port)
-	isIPv4 := connection.IP.To4() != nil
-	if isIPv4 {
+	if connection.IP.Is4() {
 		return c.runIptablesInstruction(ctx, instruction)
 	} else if c.ip6Tables == "" {
 		return fmt.Errorf("accept output to VPN server: %w", ErrNeedIP6Tables)
@@ -160,8 +155,8 @@ func (c *Config) acceptOutputTrafficToVPN(ctx context.Context,
 
 // Thanks to @npawelek.
 func (c *Config) acceptOutputFromIPToSubnet(ctx context.Context,
-	intf string, sourceIP net.IP, destinationSubnet net.IPNet, remove bool) error {
-	doIPv4 := sourceIP.To4() != nil && destinationSubnet.IP.To4() != nil
+	intf string, sourceIP netip.Addr, destinationSubnet netip.Prefix, remove bool) error {
+	doIPv4 := sourceIP.Is4() && destinationSubnet.Addr().Is4()
 
 	interfaceFlag := "-o " + intf
 	if intf == "*" { // all interfaces
@@ -257,7 +252,7 @@ func (c *Config) runUserPostRules(ctx context.Context, filepath string, remove b
 		case ipv4:
 			err = c.runIptablesInstruction(ctx, rule)
 		case c.ip6Tables == "":
-			err = fmt.Errorf("cannot run user ip6tables rule: %w", ErrNeedIP6Tables)
+			err = fmt.Errorf("running user ip6tables rule: %w", ErrNeedIP6Tables)
 		default: // ipv6
 			err = c.runIP6tablesInstruction(ctx, rule)
 		}

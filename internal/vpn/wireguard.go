@@ -8,6 +8,7 @@ import (
 	"github.com/qdm12/gluetun/internal/provider"
 	"github.com/qdm12/gluetun/internal/provider/utils"
 	"github.com/qdm12/gluetun/internal/wireguard"
+	"github.com/qdm12/gosettings"
 )
 
 // setupWireguard sets Wireguard up using the configurators and settings given.
@@ -18,23 +19,23 @@ func setupWireguard(ctx context.Context, netlinker NetLinker,
 	wireguarder *wireguard.Wireguard, serverName string, err error) {
 	connection, err := providerConf.GetConnection(settings.Provider.ServerSelection, ipv6Supported)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed finding a VPN server: %w", err)
+		return nil, "", fmt.Errorf("finding a VPN server: %w", err)
 	}
 
 	wireguardSettings := utils.BuildWireguardSettings(connection, settings.Wireguard, ipv6Supported)
 
 	logger.Debug("Wireguard server public key: " + wireguardSettings.PublicKey)
-	logger.Debug("Wireguard client private key: " + wireguardSettings.PrivateKey)
-	logger.Debug("Wireguard pre-shared key: " + wireguardSettings.PreSharedKey)
+	logger.Debug("Wireguard client private key: " + gosettings.ObfuscateKey(wireguardSettings.PrivateKey))
+	logger.Debug("Wireguard pre-shared key: " + gosettings.ObfuscateKey(wireguardSettings.PreSharedKey))
 
 	wireguarder, err = wireguard.New(wireguardSettings, netlinker, logger)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed creating Wireguard: %w", err)
+		return nil, "", fmt.Errorf("creating Wireguard: %w", err)
 	}
 
 	err = fw.SetVPNConnection(ctx, connection, settings.Wireguard.Interface)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed setting firewall: %w", err)
+		return nil, "", fmt.Errorf("setting firewall: %w", err)
 	}
 
 	return wireguarder, connection.ServerName, nil

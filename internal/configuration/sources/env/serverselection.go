@@ -2,98 +2,69 @@ package env
 
 import (
 	"errors"
-	"fmt"
-	"net"
-	"strconv"
-	"strings"
 
 	"github.com/qdm12/gluetun/internal/configuration/settings"
 	"github.com/qdm12/gluetun/internal/constants/providers"
-)
-
-var (
-	ErrServerNumberNotValid = errors.New("server number is not valid")
+	"github.com/qdm12/gosettings/sources/env"
 )
 
 func (s *Source) readServerSelection(vpnProvider, vpnType string) (
 	ss settings.ServerSelection, err error) {
 	ss.VPN = vpnType
 
-	ss.TargetIP, err = s.readOpenVPNTargetIP()
+	ss.TargetIP, err = s.env.NetipAddr("VPN_ENDPOINT_IP",
+		env.RetroKeys("OPENVPN_TARGET_IP"))
 	if err != nil {
 		return ss, err
 	}
 
-	countriesKey, _ := s.getEnvWithRetro("SERVER_COUNTRIES", "COUNTRY")
-	ss.Countries = envToCSV(countriesKey)
+	ss.Countries = s.env.CSV("SERVER_COUNTRIES", env.RetroKeys("COUNTRY"))
 	if vpnProvider == providers.Cyberghost && len(ss.Countries) == 0 {
 		// Retro-compatibility for Cyberghost using the REGION variable
-		ss.Countries = envToCSV("REGION")
+		ss.Countries = s.env.CSV("REGION")
 		if len(ss.Countries) > 0 {
-			s.onRetroActive("REGION", "SERVER_COUNTRIES")
+			s.handleDeprecatedKey("REGION", "SERVER_COUNTRIES")
 		}
 	}
 
-	regionsKey, _ := s.getEnvWithRetro("SERVER_REGIONS", "REGION")
-	ss.Regions = envToCSV(regionsKey)
-
-	citiesKey, _ := s.getEnvWithRetro("SERVER_CITIES", "CITY")
-	ss.Cities = envToCSV(citiesKey)
-
-	ss.ISPs = envToCSV("ISP")
-
-	hostnamesKey, _ := s.getEnvWithRetro("SERVER_HOSTNAMES", "SERVER_HOSTNAME")
-	ss.Hostnames = envToCSV(hostnamesKey)
-
-	serverNamesKey, _ := s.getEnvWithRetro("SERVER_NAMES", "SERVER_NAME")
-	ss.Names = envToCSV(serverNamesKey)
-
-	if csv := getCleanedEnv("SERVER_NUMBER"); csv != "" {
-		numbersStrings := strings.Split(csv, ",")
-		numbers := make([]uint16, len(numbersStrings))
-		for i, numberString := range numbersStrings {
-			const base, bitSize = 10, 16
-			number, err := strconv.ParseInt(numberString, base, bitSize)
-			if err != nil {
-				return ss, fmt.Errorf("%w: %s",
-					ErrServerNumberNotValid, numberString)
-			} else if number < 0 || number > 65535 {
-				return ss, fmt.Errorf("%w: %d must be between 0 and 65535",
-					ErrServerNumberNotValid, number)
-			}
-			numbers[i] = uint16(number)
-		}
-		ss.Numbers = numbers
+	ss.Regions = s.env.CSV("SERVER_REGIONS", env.RetroKeys("REGION"))
+	ss.Cities = s.env.CSV("SERVER_CITIES", env.RetroKeys("CITY"))
+	ss.ISPs = s.env.CSV("ISP")
+	ss.Hostnames = s.env.CSV("SERVER_HOSTNAMES", env.RetroKeys("SERVER_HOSTNAME"))
+	ss.Names = s.env.CSV("SERVER_NAMES", env.RetroKeys("SERVER_NAME"))
+	ss.Numbers, err = s.env.CSVUint16("SERVER_NUMBER")
+	if err != nil {
+		return ss, err
 	}
 
 	// Mullvad only
-	ss.OwnedOnly, err = s.readOwnedOnly()
+	ss.OwnedOnly, err = s.env.BoolPtr("OWNED_ONLY", env.RetroKeys("OWNED"))
 	if err != nil {
 		return ss, err
 	}
 
 	// VPNUnlimited and ProtonVPN only
-	ss.FreeOnly, err = envToBoolPtr("FREE_ONLY")
+	ss.FreeOnly, err = s.env.BoolPtr("FREE_ONLY")
 	if err != nil {
-		return ss, fmt.Errorf("environment variable FREE_ONLY: %w", err)
+		return ss, err
 	}
 
 	// VPNSecure only
-	ss.PremiumOnly, err = envToBoolPtr("PREMIUM_ONLY")
+	ss.PremiumOnly, err = s.env.BoolPtr("PREMIUM_ONLY")
 	if err != nil {
-		return ss, fmt.Errorf("environment variable PREMIUM_ONLY: %w", err)
+		return ss, err
 	}
 
 	// VPNUnlimited only
-	ss.MultiHopOnly, err = envToBoolPtr("MULTIHOP_ONLY")
+	ss.MultiHopOnly, err = s.env.BoolPtr("MULTIHOP_ONLY")
 	if err != nil {
-		return ss, fmt.Errorf("environment variable MULTIHOP_ONLY: %w", err)
+		return ss, err
 	}
 
 	// VPNUnlimited only
-	ss.MultiHopOnly, err = envToBoolPtr("STREAM_ONLY")
+	ss.MultiHopOnly, err = s.env.BoolPtr("STREAM_ONLY")
 	if err != nil {
-		return ss, fmt.Errorf("environment variable STREAM_ONLY: %w", err)
+		return ss, err
 	}
 
 	ss.OpenVPN, err = s.readOpenVPNSelection()
@@ -112,27 +83,3 @@ func (s *Source) readServerSelection(vpnProvider, vpnType string) (
 var (
 	ErrInvalidIP = errors.New("invalid IP address")
 )
-
-func (s *Source) readOpenVPNTargetIP() (ip net.IP, err error) {
-	envKey, value := s.getEnvWithRetro("VPN_ENDPOINT_IP", "OPENVPN_TARGET_IP")
-	if value == "" {
-		return nil, nil
-	}
-
-	ip = net.ParseIP(value)
-	if ip == nil {
-		return nil, fmt.Errorf("environment variable %s: %w: %s",
-			envKey, ErrInvalidIP, value)
-	}
-
-	return ip, nil
-}
-
-func (s *Source) readOwnedOnly() (ownedOnly *bool, err error) {
-	envKey, _ := s.getEnvWithRetro("OWNED_ONLY", "OWNED")
-	ownedOnly, err = envToBoolPtr(envKey)
-	if err != nil {
-		return nil, fmt.Errorf("environment variable %s: %w", envKey, err)
-	}
-	return ownedOnly, nil
-}

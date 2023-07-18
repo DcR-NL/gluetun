@@ -3,7 +3,7 @@ package models
 import (
 	"errors"
 	"fmt"
-	"net"
+	"net/netip"
 	"reflect"
 	"strings"
 
@@ -13,26 +13,26 @@ import (
 type Server struct {
 	VPN string `json:"vpn,omitempty"`
 	// Surfshark: country is also used for multi-hop
-	Country     string   `json:"country,omitempty"`
-	Region      string   `json:"region,omitempty"`
-	City        string   `json:"city,omitempty"`
-	ISP         string   `json:"isp,omitempty"`
-	Owned       bool     `json:"owned,omitempty"`
-	Number      uint16   `json:"number,omitempty"`
-	ServerName  string   `json:"server_name,omitempty"`
-	Hostname    string   `json:"hostname,omitempty"`
-	TCP         bool     `json:"tcp,omitempty"`
-	UDP         bool     `json:"udp,omitempty"`
-	OvpnX509    string   `json:"x509,omitempty"`
-	RetroLoc    string   `json:"retroloc,omitempty"` // TODO remove in v4
-	MultiHop    bool     `json:"multihop,omitempty"`
-	WgPubKey    string   `json:"wgpubkey,omitempty"`
-	Free        bool     `json:"free,omitempty"`
-	Stream      bool     `json:"stream,omitempty"`
-	Premium     bool     `json:"premium,omitempty"`
-	PortForward bool     `json:"port_forward,omitempty"`
-	Keep        bool     `json:"keep,omitempty"`
-	IPs         []net.IP `json:"ips,omitempty"`
+	Country     string       `json:"country,omitempty"`
+	Region      string       `json:"region,omitempty"`
+	City        string       `json:"city,omitempty"`
+	ISP         string       `json:"isp,omitempty"`
+	Owned       bool         `json:"owned,omitempty"`
+	Number      uint16       `json:"number,omitempty"`
+	ServerName  string       `json:"server_name,omitempty"`
+	Hostname    string       `json:"hostname,omitempty"`
+	TCP         bool         `json:"tcp,omitempty"`
+	UDP         bool         `json:"udp,omitempty"`
+	OvpnX509    string       `json:"x509,omitempty"`
+	RetroLoc    string       `json:"retroloc,omitempty"` // TODO remove in v4
+	MultiHop    bool         `json:"multihop,omitempty"`
+	WgPubKey    string       `json:"wgpubkey,omitempty"`
+	Free        bool         `json:"free,omitempty"`
+	Stream      bool         `json:"stream,omitempty"`
+	Premium     bool         `json:"premium,omitempty"`
+	PortForward bool         `json:"port_forward,omitempty"`
+	Keep        bool         `json:"keep,omitempty"`
+	IPs         []netip.Addr `json:"ips,omitempty"`
 }
 
 var (
@@ -47,17 +47,15 @@ var (
 func (s *Server) HasMinimumInformation() (err error) {
 	switch {
 	case s.VPN == "":
-		return ErrVPNFieldEmpty
-	case s.Hostname == "":
-		return ErrHostnameFieldEmpty
+		return fmt.Errorf("%w", ErrVPNFieldEmpty)
 	case len(s.IPs) == 0:
-		return ErrIPsFieldEmpty
+		return fmt.Errorf("%w", ErrIPsFieldEmpty)
 	case s.VPN == vpn.Wireguard && (s.TCP || s.UDP):
-		return ErrNetworkProtocolSet
+		return fmt.Errorf("%w", ErrNetworkProtocolSet)
 	case s.VPN == vpn.OpenVPN && !s.TCP && !s.UDP:
-		return ErrNoNetworkProtocol
+		return fmt.Errorf("%w", ErrNoNetworkProtocol)
 	case s.VPN == vpn.Wireguard && s.WgPubKey == "":
-		return ErrWireguardPublicKeyEmpty
+		return fmt.Errorf("%w", ErrWireguardPublicKeyEmpty)
 	default:
 		return nil
 	}
@@ -74,13 +72,13 @@ func (s *Server) Equal(other Server) (equal bool) {
 	return reflect.DeepEqual(serverCopy, other)
 }
 
-func ipsAreEqual(a, b []net.IP) (equal bool) {
+func ipsAreEqual(a, b []netip.Addr) (equal bool) {
 	if len(a) != len(b) {
 		return false
 	}
 
 	for i := range a {
-		if !a[i].Equal(b[i]) {
+		if a[i].Compare(b[i]) != 0 {
 			return false
 		}
 	}

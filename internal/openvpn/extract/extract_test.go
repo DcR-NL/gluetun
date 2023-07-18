@@ -2,7 +2,7 @@ package extract
 
 import (
 	"errors"
-	"net"
+	"net/netip"
 	"testing"
 
 	"github.com/qdm12/gluetun/internal/constants"
@@ -20,21 +20,21 @@ func Test_extractDataFromLines(t *testing.T) {
 		err        error
 	}{
 		"success": {
-			lines: []string{"bla bla", "proto tcp", "remote 1.2.3.4 1194 tcp", "dev tun6"},
+			lines: []string{"bla", "proto tcp", "remote 1.2.3.4 1194 tcp", "dev tun6"},
 			connection: models.Connection{
-				IP:       net.IPv4(1, 2, 3, 4),
+				IP:       netip.AddrFrom4([4]byte{1, 2, 3, 4}),
 				Port:     1194,
 				Protocol: constants.TCP,
 			},
 		},
 		"extraction error": {
-			lines: []string{"bla bla", "proto bad", "remote 1.2.3.4 1194 tcp"},
-			err:   errors.New("on line 2: failed extracting protocol from proto line: network protocol not supported: bad"),
+			lines: []string{"bla", "proto bad", "remote 1.2.3.4 1194 tcp"},
+			err:   errors.New("on line 2: extracting protocol from proto line: network protocol not supported: bad"),
 		},
 		"only use first values found": {
 			lines: []string{"proto udp", "proto tcp", "remote 1.2.3.4 443 tcp", "remote 5.2.3.4 1194 udp"},
 			connection: models.Connection{
-				IP:       net.IPv4(1, 2, 3, 4),
+				IP:       netip.AddrFrom4([4]byte{1, 2, 3, 4}),
 				Port:     443,
 				Protocol: constants.UDP,
 			},
@@ -49,7 +49,7 @@ func Test_extractDataFromLines(t *testing.T) {
 		"default TCP port": {
 			lines: []string{"remote 1.2.3.4", "proto tcp"},
 			connection: models.Connection{
-				IP:       net.IPv4(1, 2, 3, 4),
+				IP:       netip.AddrFrom4([4]byte{1, 2, 3, 4}),
 				Port:     443,
 				Protocol: constants.TCP,
 			},
@@ -57,7 +57,7 @@ func Test_extractDataFromLines(t *testing.T) {
 		"default UDP port": {
 			lines: []string{"remote 1.2.3.4", "proto udp"},
 			connection: models.Connection{
-				IP:       net.IPv4(1, 2, 3, 4),
+				IP:       netip.AddrFrom4([4]byte{1, 2, 3, 4}),
 				Port:     1194,
 				Protocol: constants.UDP,
 			},
@@ -88,13 +88,13 @@ func Test_extractDataFromLine(t *testing.T) {
 
 	testCases := map[string]struct {
 		line     string
-		ip       net.IP
+		ip       netip.Addr
 		port     uint16
 		protocol string
 		isErr    error
 	}{
 		"irrelevant line": {
-			line: "bla bla",
+			line: "bla",
 		},
 		"extract proto error": {
 			line:  "proto bad",
@@ -110,7 +110,7 @@ func Test_extractDataFromLine(t *testing.T) {
 		},
 		"extract remote success": {
 			line:     "remote 1.2.3.4 1194 udp",
-			ip:       net.IPv4(1, 2, 3, 4),
+			ip:       netip.AddrFrom4([4]byte{1, 2, 3, 4}),
 			port:     1194,
 			protocol: constants.UDP,
 		},
@@ -186,7 +186,7 @@ func Test_extractRemote(t *testing.T) {
 
 	testCases := map[string]struct {
 		line     string
-		ip       net.IP
+		ip       netip.Addr
 		port     uint16
 		protocol string
 		err      error
@@ -201,11 +201,11 @@ func Test_extractRemote(t *testing.T) {
 		},
 		"host is not an IP": {
 			line: "remote somehost.com",
-			err:  errors.New("host is not an an IP address: somehost.com"),
+			err:  errors.New("host is not an IP address: somehost.com"),
 		},
 		"only IP host": {
 			line: "remote 1.2.3.4",
-			ip:   net.IPv4(1, 2, 3, 4),
+			ip:   netip.AddrFrom4([4]byte{1, 2, 3, 4}),
 		},
 		"port not an integer": {
 			line: "remote 1.2.3.4 bad",
@@ -225,7 +225,7 @@ func Test_extractRemote(t *testing.T) {
 		},
 		"IP host and port": {
 			line: "remote 1.2.3.4 8000",
-			ip:   net.IPv4(1, 2, 3, 4),
+			ip:   netip.AddrFrom4([4]byte{1, 2, 3, 4}),
 			port: 8000,
 		},
 		"invalid protocol": {
@@ -234,7 +234,7 @@ func Test_extractRemote(t *testing.T) {
 		},
 		"IP host and port and protocol": {
 			line:     "remote 1.2.3.4 8000 udp",
-			ip:       net.IPv4(1, 2, 3, 4),
+			ip:       netip.AddrFrom4([4]byte{1, 2, 3, 4}),
 			port:     8000,
 			protocol: constants.UDP,
 		},

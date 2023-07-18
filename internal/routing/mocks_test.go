@@ -8,7 +8,7 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	netlink "github.com/vishvananda/netlink"
+	netlink "github.com/qdm12/gluetun/internal/netlink"
 )
 
 // MockNetLinker is a mock of NetLinker interface.
@@ -34,20 +34,6 @@ func (m *MockNetLinker) EXPECT() *MockNetLinkerMockRecorder {
 	return m.recorder
 }
 
-// AddrAdd mocks base method.
-func (m *MockNetLinker) AddrAdd(arg0 netlink.Link, arg1 *netlink.Addr) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AddrAdd", arg0, arg1)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// AddrAdd indicates an expected call of AddrAdd.
-func (mr *MockNetLinkerMockRecorder) AddrAdd(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddrAdd", reflect.TypeOf((*MockNetLinker)(nil).AddrAdd), arg0, arg1)
-}
-
 // AddrList mocks base method.
 func (m *MockNetLinker) AddrList(arg0 netlink.Link, arg1 int) ([]netlink.Addr, error) {
 	m.ctrl.T.Helper()
@@ -61,6 +47,20 @@ func (m *MockNetLinker) AddrList(arg0 netlink.Link, arg1 int) ([]netlink.Addr, e
 func (mr *MockNetLinkerMockRecorder) AddrList(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddrList", reflect.TypeOf((*MockNetLinker)(nil).AddrList), arg0, arg1)
+}
+
+// AddrReplace mocks base method.
+func (m *MockNetLinker) AddrReplace(arg0 netlink.Link, arg1 netlink.Addr) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddrReplace", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddrReplace indicates an expected call of AddrReplace.
+func (mr *MockNetLinkerMockRecorder) AddrReplace(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddrReplace", reflect.TypeOf((*MockNetLinker)(nil).AddrReplace), arg0, arg1)
 }
 
 // IsWireguardSupported mocks base method.
@@ -79,11 +79,12 @@ func (mr *MockNetLinkerMockRecorder) IsWireguardSupported() *gomock.Call {
 }
 
 // LinkAdd mocks base method.
-func (m *MockNetLinker) LinkAdd(arg0 netlink.Link) error {
+func (m *MockNetLinker) LinkAdd(arg0 netlink.Link) (int, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "LinkAdd", arg0)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // LinkAdd indicates an expected call of LinkAdd.
@@ -166,11 +167,12 @@ func (mr *MockNetLinkerMockRecorder) LinkSetDown(arg0 interface{}) *gomock.Call 
 }
 
 // LinkSetUp mocks base method.
-func (m *MockNetLinker) LinkSetUp(arg0 netlink.Link) error {
+func (m *MockNetLinker) LinkSetUp(arg0 netlink.Link) (int, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "LinkSetUp", arg0)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // LinkSetUp indicates an expected call of LinkSetUp.
@@ -180,7 +182,7 @@ func (mr *MockNetLinkerMockRecorder) LinkSetUp(arg0 interface{}) *gomock.Call {
 }
 
 // RouteAdd mocks base method.
-func (m *MockNetLinker) RouteAdd(arg0 *netlink.Route) error {
+func (m *MockNetLinker) RouteAdd(arg0 netlink.Route) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RouteAdd", arg0)
 	ret0, _ := ret[0].(error)
@@ -194,7 +196,7 @@ func (mr *MockNetLinkerMockRecorder) RouteAdd(arg0 interface{}) *gomock.Call {
 }
 
 // RouteDel mocks base method.
-func (m *MockNetLinker) RouteDel(arg0 *netlink.Route) error {
+func (m *MockNetLinker) RouteDel(arg0 netlink.Route) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RouteDel", arg0)
 	ret0, _ := ret[0].(error)
@@ -208,22 +210,22 @@ func (mr *MockNetLinkerMockRecorder) RouteDel(arg0 interface{}) *gomock.Call {
 }
 
 // RouteList mocks base method.
-func (m *MockNetLinker) RouteList(arg0 netlink.Link, arg1 int) ([]netlink.Route, error) {
+func (m *MockNetLinker) RouteList(arg0 int) ([]netlink.Route, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RouteList", arg0, arg1)
+	ret := m.ctrl.Call(m, "RouteList", arg0)
 	ret0, _ := ret[0].([]netlink.Route)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // RouteList indicates an expected call of RouteList.
-func (mr *MockNetLinkerMockRecorder) RouteList(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockNetLinkerMockRecorder) RouteList(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RouteList", reflect.TypeOf((*MockNetLinker)(nil).RouteList), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RouteList", reflect.TypeOf((*MockNetLinker)(nil).RouteList), arg0)
 }
 
 // RouteReplace mocks base method.
-func (m *MockNetLinker) RouteReplace(arg0 *netlink.Route) error {
+func (m *MockNetLinker) RouteReplace(arg0 netlink.Route) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RouteReplace", arg0)
 	ret0, _ := ret[0].(error)
@@ -237,7 +239,7 @@ func (mr *MockNetLinkerMockRecorder) RouteReplace(arg0 interface{}) *gomock.Call
 }
 
 // RuleAdd mocks base method.
-func (m *MockNetLinker) RuleAdd(arg0 *netlink.Rule) error {
+func (m *MockNetLinker) RuleAdd(arg0 netlink.Rule) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RuleAdd", arg0)
 	ret0, _ := ret[0].(error)
@@ -251,7 +253,7 @@ func (mr *MockNetLinkerMockRecorder) RuleAdd(arg0 interface{}) *gomock.Call {
 }
 
 // RuleDel mocks base method.
-func (m *MockNetLinker) RuleDel(arg0 *netlink.Rule) error {
+func (m *MockNetLinker) RuleDel(arg0 netlink.Rule) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RuleDel", arg0)
 	ret0, _ := ret[0].(error)

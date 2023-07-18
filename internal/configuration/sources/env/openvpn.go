@@ -1,11 +1,10 @@
 package env
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/qdm12/gluetun/internal/configuration/settings"
-	"github.com/qdm12/govalid/binary"
+	"github.com/qdm12/gosettings/sources/env"
 )
 
 func (s *Source) readOpenVPN() (
@@ -15,113 +14,64 @@ func (s *Source) readOpenVPN() (
 			"OPENVPN_KEY_PASSPHRASE", "OPENVPN_ENCRYPTED_KEY"}, err)
 	}()
 
-	openVPN.Version = getCleanedEnv("OPENVPN_VERSION")
-	openVPN.User = s.readOpenVPNUser()
-	openVPN.Password = s.readOpenVPNPassword()
-	confFile := getCleanedEnv("OPENVPN_CUSTOM_CONFIG")
-	if confFile != "" {
-		openVPN.ConfFile = &confFile
-	}
-
-	ciphersKey, _ := s.getEnvWithRetro("OPENVPN_CIPHERS", "OPENVPN_CIPHER")
-	openVPN.Ciphers = envToCSV(ciphersKey)
-
-	auth := getCleanedEnv("OPENVPN_AUTH")
-	if auth != "" {
-		openVPN.Auth = &auth
-	}
-
-	openVPN.Cert = envToStringPtr("OPENVPN_CERT")
-	openVPN.Key = envToStringPtr("OPENVPN_KEY")
-	openVPN.EncryptedKey = envToStringPtr("OPENVPN_ENCRYPTED_KEY")
-
-	openVPN.KeyPassphrase = s.readOpenVPNKeyPassphrase()
+	openVPN.Version = s.env.String("OPENVPN_VERSION")
+	openVPN.User = s.env.Get("OPENVPN_USER",
+		env.RetroKeys("USER"), env.ForceLowercase(false))
+	openVPN.Password = s.env.Get("OPENVPN_PASSWORD",
+		env.RetroKeys("PASSWORD"), env.ForceLowercase(false))
+	openVPN.ConfFile = s.env.Get("OPENVPN_CUSTOM_CONFIG", env.ForceLowercase(false))
+	openVPN.Ciphers = s.env.CSV("OPENVPN_CIPHERS", env.RetroKeys("OPENVPN_CIPHER"))
+	openVPN.Auth = s.env.Get("OPENVPN_AUTH")
+	openVPN.Cert = s.env.Get("OPENVPN_CERT", env.ForceLowercase(false))
+	openVPN.Key = s.env.Get("OPENVPN_KEY", env.ForceLowercase(false))
+	openVPN.EncryptedKey = s.env.Get("OPENVPN_ENCRYPTED_KEY", env.ForceLowercase(false))
+	openVPN.KeyPassphrase = s.env.Get("OPENVPN_KEY_PASSPHRASE", env.ForceLowercase(false))
 
 	openVPN.PIAEncPreset = s.readPIAEncryptionPreset()
 
-	openVPN.MSSFix, err = envToUint16Ptr("OPENVPN_MSSFIX")
+	openVPN.MSSFix, err = s.env.Uint16Ptr("OPENVPN_MSSFIX")
 	if err != nil {
-		return openVPN, fmt.Errorf("environment variable OPENVPN_MSSFIX: %w", err)
+		return openVPN, err
 	}
 
-	_, openVPN.Interface = s.getEnvWithRetro("VPN_INTERFACE", "OPENVPN_INTERFACE")
+	openVPN.Interface = s.env.String("VPN_INTERFACE",
+		env.RetroKeys("OPENVPN_INTERFACE"), env.ForceLowercase(false))
 
 	openVPN.ProcessUser, err = s.readOpenVPNProcessUser()
 	if err != nil {
 		return openVPN, err
 	}
 
-	openVPN.Verbosity, err = envToIntPtr("OPENVPN_VERBOSITY")
+	openVPN.Verbosity, err = s.env.IntPtr("OPENVPN_VERBOSITY")
 	if err != nil {
-		return openVPN, fmt.Errorf("environment variable OPENVPN_VERBOSITY: %w", err)
+		return openVPN, err
 	}
 
-	flagsStr := getCleanedEnv("OPENVPN_FLAGS")
-	if flagsStr != "" {
-		openVPN.Flags = strings.Fields(flagsStr)
+	flagsPtr := s.env.Get("OPENVPN_FLAGS", env.ForceLowercase(false))
+	if flagsPtr != nil {
+		openVPN.Flags = strings.Fields(*flagsPtr)
 	}
 
 	return openVPN, nil
 }
 
-func (s *Source) readOpenVPNUser() (user *string) {
-	user = new(string)
-	_, *user = s.getEnvWithRetro("OPENVPN_USER", "USER")
-	if *user == "" {
-		return nil
-	}
-
-	// Remove spaces in user ID to simplify user's life, thanks @JeordyR
-	*user = strings.ReplaceAll(*user, " ", "")
-	return user
-}
-
-func (s *Source) readOpenVPNPassword() (password *string) {
-	password = new(string)
-	_, *password = s.getEnvWithRetro("OPENVPN_PASSWORD", "PASSWORD")
-	if *password == "" {
-		return nil
-	}
-
-	return password
-}
-
-func (s *Source) readOpenVPNKeyPassphrase() (passphrase *string) {
-	passphrase = new(string)
-	*passphrase = getCleanedEnv("OPENVPN_KEY_PASSPHRASE")
-	if *passphrase == "" {
-		return nil
-	}
-	return passphrase
-}
-
 func (s *Source) readPIAEncryptionPreset() (presetPtr *string) {
-	_, preset := s.getEnvWithRetro(
+	return s.env.Get(
 		"PRIVATE_INTERNET_ACCESS_OPENVPN_ENCRYPTION_PRESET",
-		"PIA_ENCRYPTION", "ENCRYPTION")
-	if preset != "" {
-		return &preset
-	}
-	return nil
+		env.RetroKeys("ENCRYPTION", "PIA_ENCRYPTION"))
 }
 
 func (s *Source) readOpenVPNProcessUser() (processUser string, err error) {
-	key, value := s.getEnvWithRetro("OPENVPN_PROCESS_USER", "OPENVPN_ROOT")
-	if key == "OPENVPN_PROCESS_USER" {
-		return value, nil
+	value, err := s.env.BoolPtr("OPENVPN_ROOT") // Retro-compatibility
+	if err != nil {
+		return "", err
+	} else if value != nil {
+		if *value {
+			return "root", nil
+		}
+		const defaultNonRootUser = "nonrootuser"
+		return defaultNonRootUser, nil
 	}
 
-	// Retro-compatibility
-	if value == "" {
-		return "", nil
-	}
-	root, err := binary.Validate(value)
-	if err != nil {
-		return "", fmt.Errorf("environment variable %s: %w", key, err)
-	}
-	if root {
-		return "root", nil
-	}
-	const defaultNonRootUser = "nonrootuser"
-	return defaultNonRootUser, nil
+	return s.env.String("OPENVPN_PROCESS_USER"), nil
 }

@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
+	"net/netip"
 
 	"github.com/qdm12/gluetun/internal/provider/common"
 )
@@ -15,20 +15,20 @@ type apiData struct {
 }
 
 type apiServer struct {
-	PublicName  string `json:"public_name"`
-	CountryName string `json:"country_name"`
-	CountryCode string `json:"country_code"`
-	Location    string `json:"location"`
-	Continent   string `json:"continent"`
-	IPv4In1     net.IP `json:"ip_v4_in1"`
-	IPv4In2     net.IP `json:"ip_v4_in2"`
-	IPv4In3     net.IP `json:"ip_v4_in3"`
-	IPv4In4     net.IP `json:"ip_v4_in4"`
-	IPv6In1     net.IP `json:"ip_v6_in1"`
-	IPv6In2     net.IP `json:"ip_v6_in2"`
-	IPv6In3     net.IP `json:"ip_v6_in3"`
-	IPv6In4     net.IP `json:"ip_v6_in4"`
-	Health      string `json:"health"`
+	PublicName  string     `json:"public_name"`
+	CountryName string     `json:"country_name"`
+	CountryCode string     `json:"country_code"`
+	Location    string     `json:"location"`
+	Continent   string     `json:"continent"`
+	IPv4In1     netip.Addr `json:"ip_v4_in1"`
+	IPv4In2     netip.Addr `json:"ip_v4_in2"`
+	IPv4In3     netip.Addr `json:"ip_v4_in3"`
+	IPv4In4     netip.Addr `json:"ip_v4_in4"`
+	IPv6In1     netip.Addr `json:"ip_v6_in1"`
+	IPv6In2     netip.Addr `json:"ip_v6_in2"`
+	IPv6In3     netip.Addr `json:"ip_v6_in3"`
+	IPv6In4     netip.Addr `json:"ip_v6_in4"`
+	Health      string     `json:"health"`
 }
 
 func fetchAPI(ctx context.Context, client *http.Client) (
@@ -54,7 +54,7 @@ func fetchAPI(ctx context.Context, client *http.Client) (
 	decoder := json.NewDecoder(response.Body)
 	if err := decoder.Decode(&data); err != nil {
 		_ = response.Body.Close()
-		return data, fmt.Errorf("unmarshaling response body: %w", err)
+		return data, fmt.Errorf("decoding response body: %w", err)
 	}
 
 	if err := response.Body.Close(); err != nil {

@@ -40,8 +40,8 @@ func (l *Loop) Run(ctx context.Context, done chan<- struct{}) {
 
 			// Infinite loop
 			l.logger.Debug("keeping port forwarded...")
-			err = startData.PortForwarder.KeepPortForward(ctx, l.client,
-				port, startData.Gateway, startData.ServerName)
+			err = startData.PortForwarder.KeepPortForward(ctx, port,
+				startData.Gateway, startData.ServerName, l.logger)
 			l.logger.Debug("done keeping port forwarded...")
 			errorCh <- err
 			l.logger.Debug("notifying keeping port forward eventual error...")

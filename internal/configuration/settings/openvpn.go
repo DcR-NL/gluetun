@@ -4,94 +4,93 @@ import (
 	"encoding/base64"
 	"fmt"
 	"regexp"
-	"strings"
 
-	"github.com/qdm12/gluetun/internal/configuration/settings/helpers"
 	"github.com/qdm12/gluetun/internal/constants/openvpn"
 	"github.com/qdm12/gluetun/internal/constants/providers"
 	"github.com/qdm12/gluetun/internal/openvpn/extract"
 	"github.com/qdm12/gluetun/internal/provider/privateinternetaccess/presets"
+	"github.com/qdm12/gosettings"
+	"github.com/qdm12/gosettings/validate"
 	"github.com/qdm12/gotree"
 )
 
 // OpenVPN contains settings to configure the OpenVPN client.
 type OpenVPN struct {
 	// Version is the OpenVPN version to run.
-	// It can only be "2.4" or "2.5".
-	Version string
+	// It can only be "2.5" or "2.6".
+	Version string `json:"version"`
 	// User is the OpenVPN authentication username.
 	// It cannot be nil in the internal state if OpenVPN is used.
 	// It is usually required but in some cases can be the empty string
 	// to indicate no user+password authentication is needed.
-	User *string
+	User *string `json:"user"`
 	// Password is the OpenVPN authentication password.
 	// It cannot be nil in the internal state if OpenVPN is used.
 	// It is usually required but in some cases can be the empty string
 	// to indicate no user+password authentication is needed.
-	Password *string
+	Password *string `json:"password"`
 	// ConfFile is a custom OpenVPN configuration file path.
 	// It can be set to the empty string for it to be ignored.
 	// It cannot be nil in the internal state.
-	ConfFile *string
+	ConfFile *string `json:"config_file_path"`
 	// Ciphers is a list of ciphers to use for OpenVPN,
 	// different from the ones specified by the VPN
 	// service provider configuration files.
-	Ciphers []string
+	Ciphers []string `json:"ciphers"`
 	// Auth is an auth algorithm to use in OpenVPN instead
 	// of the one specified by the VPN service provider.
 	// It cannot be nil in the internal state.
 	// It is ignored if it is set to the empty string.
-	Auth *string
-	// Cert is the OpenVPN certificate for the <cert> block.
+	Auth *string `json:"auth"`
+	// Cert is the base64 encoded DER of an OpenVPN certificate for the <cert> block.
 	// This is notably used by Cyberghost and VPN secure.
 	// It can be set to the empty string to be ignored.
 	// It cannot be nil in the internal state.
-	Cert *string
-	// Key is the OpenVPN key.
+	Cert *string `json:"cert"`
+	// Key is the base64 encoded DER of an OpenVPN key.
 	// This is used by Cyberghost and VPN Unlimited.
 	// It can be set to the empty string to be ignored.
 	// It cannot be nil in the internal state.
-	Key *string
-	// EncryptedKey is the content of an encrypted
-	// key for OpenVPN. It is used by VPN secure.
+	Key *string `json:"key"`
+	// EncryptedKey is the base64 encoded DER of an encrypted key for OpenVPN.
+	// It is used by VPN secure.
 	// It defaults to the empty string meaning it is not
 	// to be used. KeyPassphrase must be set if this one is set.
-	EncryptedKey *string
+	EncryptedKey *string `json:"encrypted_key"`
 	// KeyPassphrase is the key passphrase to be used by OpenVPN
 	// to decrypt the EncryptedPrivateKey. It defaults to the
 	// empty string and must be set if EncryptedPrivateKey is set.
-	KeyPassphrase *string
+	KeyPassphrase *string `json:"key_passphrase"`
 	// PIAEncPreset is the encryption preset for
 	// Private Internet Access. It can be set to an
 	// empty string for other providers.
-	PIAEncPreset *string
+	PIAEncPreset *string `json:"pia_encryption_preset"`
 	// MSSFix is the value (1 to 10000) to set for the
 	// mssfix option for OpenVPN. It is ignored if set to 0.
 	// It cannot be nil in the internal state.
-	MSSFix *uint16
+	MSSFix *uint16 `json:"mssfix"`
 	// Interface is the OpenVPN device interface name.
 	// It cannot be an empty string in the internal state.
-	Interface string
+	Interface string `json:"interface"`
 	// ProcessUser is the OpenVPN process OS username
 	// to use. It cannot be empty in the internal state.
 	// It defaults to 'root'.
-	ProcessUser string
+	ProcessUser string `json:"process_user"`
 	// Verbosity is the OpenVPN verbosity level from 0 to 6.
 	// It cannot be nil in the internal state.
-	Verbosity *int
+	Verbosity *int `json:"verbosity"`
 	// Flags is a slice of additional flags to be passed
 	// to the OpenVPN program.
-	Flags []string
+	Flags []string `json:"flags"`
 }
 
 var ivpnAccountID = regexp.MustCompile(`^(i|ivpn)\-[a-zA-Z0-9]{4}\-[a-zA-Z0-9]{4}\-[a-zA-Z0-9]{4}$`)
 
 func (o OpenVPN) validate(vpnProvider string) (err error) {
 	// Validate version
-	validVersions := []string{openvpn.Openvpn24, openvpn.Openvpn25}
-	if !helpers.IsOneOf(o.Version, validVersions...) {
-		return fmt.Errorf("%w: %q can only be one of %s",
-			ErrOpenVPNVersionIsNotValid, o.Version, strings.Join(validVersions, ", "))
+	validVersions := []string{openvpn.Openvpn25, openvpn.Openvpn26}
+	if err = validate.IsOneOf(o.Version, validVersions...); err != nil {
+		return fmt.Errorf("%w: %w", ErrOpenVPNVersionIsNotValid, err)
 	}
 
 	isCustom := vpnProvider == providers.Custom
@@ -100,14 +99,14 @@ func (o OpenVPN) validate(vpnProvider string) (err error) {
 		vpnProvider != providers.VPNSecure
 
 	if isUserRequired && *o.User == "" {
-		return ErrOpenVPNUserIsEmpty
+		return fmt.Errorf("%w", ErrOpenVPNUserIsEmpty)
 	}
 
 	passwordRequired := isUserRequired &&
 		(vpnProvider != providers.Ivpn || !ivpnAccountID.MatchString(*o.User))
 
 	if passwordRequired && *o.Password == "" {
-		return ErrOpenVPNPasswordIsEmpty
+		return fmt.Errorf("%w", ErrOpenVPNPasswordIsEmpty)
 	}
 
 	err = validateOpenVPNConfigFilepath(isCustom, *o.ConfFile)
@@ -160,10 +159,10 @@ func validateOpenVPNConfigFilepath(isCustom bool,
 	}
 
 	if confFile == "" {
-		return ErrFilepathMissing
+		return fmt.Errorf("%w", ErrFilepathMissing)
 	}
 
-	err = helpers.FileExists(confFile)
+	err = validate.FileExists(confFile)
 	if err != nil {
 		return err
 	}
@@ -171,7 +170,7 @@ func validateOpenVPNConfigFilepath(isCustom bool,
 	extractor := extract.New()
 	_, _, err = extractor.Data(confFile)
 	if err != nil {
-		return fmt.Errorf("failed extracting information from custom configuration file: %w", err)
+		return fmt.Errorf("extracting information from custom configuration file: %w", err)
 	}
 
 	return nil
@@ -186,7 +185,7 @@ func validateOpenVPNClientCertificate(vpnProvider,
 		providers.VPNSecure,
 		providers.VPNUnlimited:
 		if clientCert == "" {
-			return ErrMissingValue
+			return fmt.Errorf("%w", ErrMissingValue)
 		}
 	}
 
@@ -209,7 +208,7 @@ func validateOpenVPNClientKey(vpnProvider, clientKey string) (err error) {
 		providers.VPNUnlimited,
 		providers.Wevpn:
 		if clientKey == "" {
-			return ErrMissingValue
+			return fmt.Errorf("%w", ErrMissingValue)
 		}
 	}
 
@@ -227,7 +226,7 @@ func validateOpenVPNClientKey(vpnProvider, clientKey string) (err error) {
 func validateOpenVPNEncryptedKey(vpnProvider,
 	encryptedPrivateKey string) (err error) {
 	if vpnProvider == providers.VPNSecure && encryptedPrivateKey == "" {
-		return ErrMissingValue
+		return fmt.Errorf("%w", ErrMissingValue)
 	}
 
 	if encryptedPrivateKey == "" {
@@ -244,92 +243,92 @@ func validateOpenVPNEncryptedKey(vpnProvider,
 func (o *OpenVPN) copy() (copied OpenVPN) {
 	return OpenVPN{
 		Version:       o.Version,
-		User:          helpers.CopyStringPtr(o.User),
-		Password:      helpers.CopyStringPtr(o.Password),
-		ConfFile:      helpers.CopyStringPtr(o.ConfFile),
-		Ciphers:       helpers.CopyStringSlice(o.Ciphers),
-		Auth:          helpers.CopyStringPtr(o.Auth),
-		Cert:          helpers.CopyStringPtr(o.Cert),
-		Key:           helpers.CopyStringPtr(o.Key),
-		EncryptedKey:  helpers.CopyStringPtr(o.EncryptedKey),
-		KeyPassphrase: helpers.CopyStringPtr(o.KeyPassphrase),
-		PIAEncPreset:  helpers.CopyStringPtr(o.PIAEncPreset),
-		MSSFix:        helpers.CopyUint16Ptr(o.MSSFix),
+		User:          gosettings.CopyPointer(o.User),
+		Password:      gosettings.CopyPointer(o.Password),
+		ConfFile:      gosettings.CopyPointer(o.ConfFile),
+		Ciphers:       gosettings.CopySlice(o.Ciphers),
+		Auth:          gosettings.CopyPointer(o.Auth),
+		Cert:          gosettings.CopyPointer(o.Cert),
+		Key:           gosettings.CopyPointer(o.Key),
+		EncryptedKey:  gosettings.CopyPointer(o.EncryptedKey),
+		KeyPassphrase: gosettings.CopyPointer(o.KeyPassphrase),
+		PIAEncPreset:  gosettings.CopyPointer(o.PIAEncPreset),
+		MSSFix:        gosettings.CopyPointer(o.MSSFix),
 		Interface:     o.Interface,
 		ProcessUser:   o.ProcessUser,
-		Verbosity:     helpers.CopyIntPtr(o.Verbosity),
-		Flags:         helpers.CopyStringSlice(o.Flags),
+		Verbosity:     gosettings.CopyPointer(o.Verbosity),
+		Flags:         gosettings.CopySlice(o.Flags),
 	}
 }
 
 // mergeWith merges the other settings into any
 // unset field of the receiver settings object.
 func (o *OpenVPN) mergeWith(other OpenVPN) {
-	o.Version = helpers.MergeWithString(o.Version, other.Version)
-	o.User = helpers.MergeWithStringPtr(o.User, other.User)
-	o.Password = helpers.MergeWithStringPtr(o.Password, other.Password)
-	o.ConfFile = helpers.MergeWithStringPtr(o.ConfFile, other.ConfFile)
-	o.Ciphers = helpers.MergeStringSlices(o.Ciphers, other.Ciphers)
-	o.Auth = helpers.MergeWithStringPtr(o.Auth, other.Auth)
-	o.Cert = helpers.MergeWithStringPtr(o.Cert, other.Cert)
-	o.Key = helpers.MergeWithStringPtr(o.Key, other.Key)
-	o.EncryptedKey = helpers.MergeWithStringPtr(o.EncryptedKey, other.EncryptedKey)
-	o.KeyPassphrase = helpers.MergeWithStringPtr(o.KeyPassphrase, other.KeyPassphrase)
-	o.PIAEncPreset = helpers.MergeWithStringPtr(o.PIAEncPreset, other.PIAEncPreset)
-	o.MSSFix = helpers.MergeWithUint16(o.MSSFix, other.MSSFix)
-	o.Interface = helpers.MergeWithString(o.Interface, other.Interface)
-	o.ProcessUser = helpers.MergeWithString(o.ProcessUser, other.ProcessUser)
-	o.Verbosity = helpers.MergeWithIntPtr(o.Verbosity, other.Verbosity)
-	o.Flags = helpers.MergeStringSlices(o.Flags, other.Flags)
+	o.Version = gosettings.MergeWithString(o.Version, other.Version)
+	o.User = gosettings.MergeWithPointer(o.User, other.User)
+	o.Password = gosettings.MergeWithPointer(o.Password, other.Password)
+	o.ConfFile = gosettings.MergeWithPointer(o.ConfFile, other.ConfFile)
+	o.Ciphers = gosettings.MergeWithSlice(o.Ciphers, other.Ciphers)
+	o.Auth = gosettings.MergeWithPointer(o.Auth, other.Auth)
+	o.Cert = gosettings.MergeWithPointer(o.Cert, other.Cert)
+	o.Key = gosettings.MergeWithPointer(o.Key, other.Key)
+	o.EncryptedKey = gosettings.MergeWithPointer(o.EncryptedKey, other.EncryptedKey)
+	o.KeyPassphrase = gosettings.MergeWithPointer(o.KeyPassphrase, other.KeyPassphrase)
+	o.PIAEncPreset = gosettings.MergeWithPointer(o.PIAEncPreset, other.PIAEncPreset)
+	o.MSSFix = gosettings.MergeWithPointer(o.MSSFix, other.MSSFix)
+	o.Interface = gosettings.MergeWithString(o.Interface, other.Interface)
+	o.ProcessUser = gosettings.MergeWithString(o.ProcessUser, other.ProcessUser)
+	o.Verbosity = gosettings.MergeWithPointer(o.Verbosity, other.Verbosity)
+	o.Flags = gosettings.MergeWithSlice(o.Flags, other.Flags)
 }
 
 // overrideWith overrides fields of the receiver
 // settings object with any field set in the other
 // settings.
 func (o *OpenVPN) overrideWith(other OpenVPN) {
-	o.Version = helpers.OverrideWithString(o.Version, other.Version)
-	o.User = helpers.OverrideWithStringPtr(o.User, other.User)
-	o.Password = helpers.OverrideWithStringPtr(o.Password, other.Password)
-	o.ConfFile = helpers.OverrideWithStringPtr(o.ConfFile, other.ConfFile)
-	o.Ciphers = helpers.OverrideWithStringSlice(o.Ciphers, other.Ciphers)
-	o.Auth = helpers.OverrideWithStringPtr(o.Auth, other.Auth)
-	o.Cert = helpers.OverrideWithStringPtr(o.Cert, other.Cert)
-	o.Key = helpers.OverrideWithStringPtr(o.Key, other.Key)
-	o.EncryptedKey = helpers.OverrideWithStringPtr(o.EncryptedKey, other.EncryptedKey)
-	o.KeyPassphrase = helpers.OverrideWithStringPtr(o.KeyPassphrase, other.KeyPassphrase)
-	o.PIAEncPreset = helpers.OverrideWithStringPtr(o.PIAEncPreset, other.PIAEncPreset)
-	o.MSSFix = helpers.OverrideWithUint16(o.MSSFix, other.MSSFix)
-	o.Interface = helpers.OverrideWithString(o.Interface, other.Interface)
-	o.ProcessUser = helpers.OverrideWithString(o.ProcessUser, other.ProcessUser)
-	o.Verbosity = helpers.OverrideWithIntPtr(o.Verbosity, other.Verbosity)
-	o.Flags = helpers.OverrideWithStringSlice(o.Flags, other.Flags)
+	o.Version = gosettings.OverrideWithString(o.Version, other.Version)
+	o.User = gosettings.OverrideWithPointer(o.User, other.User)
+	o.Password = gosettings.OverrideWithPointer(o.Password, other.Password)
+	o.ConfFile = gosettings.OverrideWithPointer(o.ConfFile, other.ConfFile)
+	o.Ciphers = gosettings.OverrideWithSlice(o.Ciphers, other.Ciphers)
+	o.Auth = gosettings.OverrideWithPointer(o.Auth, other.Auth)
+	o.Cert = gosettings.OverrideWithPointer(o.Cert, other.Cert)
+	o.Key = gosettings.OverrideWithPointer(o.Key, other.Key)
+	o.EncryptedKey = gosettings.OverrideWithPointer(o.EncryptedKey, other.EncryptedKey)
+	o.KeyPassphrase = gosettings.OverrideWithPointer(o.KeyPassphrase, other.KeyPassphrase)
+	o.PIAEncPreset = gosettings.OverrideWithPointer(o.PIAEncPreset, other.PIAEncPreset)
+	o.MSSFix = gosettings.OverrideWithPointer(o.MSSFix, other.MSSFix)
+	o.Interface = gosettings.OverrideWithString(o.Interface, other.Interface)
+	o.ProcessUser = gosettings.OverrideWithString(o.ProcessUser, other.ProcessUser)
+	o.Verbosity = gosettings.OverrideWithPointer(o.Verbosity, other.Verbosity)
+	o.Flags = gosettings.OverrideWithSlice(o.Flags, other.Flags)
 }
 
 func (o *OpenVPN) setDefaults(vpnProvider string) {
-	o.Version = helpers.DefaultString(o.Version, openvpn.Openvpn25)
-	o.User = helpers.DefaultStringPtr(o.User, "")
+	o.Version = gosettings.DefaultString(o.Version, openvpn.Openvpn25)
+	o.User = gosettings.DefaultPointer(o.User, "")
 	if vpnProvider == providers.Mullvad {
-		o.Password = helpers.DefaultStringPtr(o.Password, "m")
+		o.Password = gosettings.DefaultPointer(o.Password, "m")
 	} else {
-		o.Password = helpers.DefaultStringPtr(o.Password, "")
+		o.Password = gosettings.DefaultPointer(o.Password, "")
 	}
 
-	o.ConfFile = helpers.DefaultStringPtr(o.ConfFile, "")
-	o.Auth = helpers.DefaultStringPtr(o.Auth, "")
-	o.Cert = helpers.DefaultStringPtr(o.Cert, "")
-	o.Key = helpers.DefaultStringPtr(o.Key, "")
-	o.EncryptedKey = helpers.DefaultStringPtr(o.EncryptedKey, "")
-	o.KeyPassphrase = helpers.DefaultStringPtr(o.KeyPassphrase, "")
+	o.ConfFile = gosettings.DefaultPointer(o.ConfFile, "")
+	o.Auth = gosettings.DefaultPointer(o.Auth, "")
+	o.Cert = gosettings.DefaultPointer(o.Cert, "")
+	o.Key = gosettings.DefaultPointer(o.Key, "")
+	o.EncryptedKey = gosettings.DefaultPointer(o.EncryptedKey, "")
+	o.KeyPassphrase = gosettings.DefaultPointer(o.KeyPassphrase, "")
 
 	var defaultEncPreset string
 	if vpnProvider == providers.PrivateInternetAccess {
 		defaultEncPreset = presets.Strong
 	}
-	o.PIAEncPreset = helpers.DefaultStringPtr(o.PIAEncPreset, defaultEncPreset)
-	o.MSSFix = helpers.DefaultUint16(o.MSSFix, 0)
-	o.Interface = helpers.DefaultString(o.Interface, "tun0")
-	o.ProcessUser = helpers.DefaultString(o.ProcessUser, "root")
-	o.Verbosity = helpers.DefaultInt(o.Verbosity, 1)
+	o.PIAEncPreset = gosettings.DefaultPointer(o.PIAEncPreset, defaultEncPreset)
+	o.MSSFix = gosettings.DefaultPointer(o.MSSFix, 0)
+	o.Interface = gosettings.DefaultString(o.Interface, "tun0")
+	o.ProcessUser = gosettings.DefaultString(o.ProcessUser, "root")
+	o.Verbosity = gosettings.DefaultPointer(o.Verbosity, 1)
 }
 
 func (o OpenVPN) String() string {
@@ -339,8 +338,8 @@ func (o OpenVPN) String() string {
 func (o OpenVPN) toLinesNode() (node *gotree.Node) {
 	node = gotree.New("OpenVPN settings:")
 	node.Appendf("OpenVPN version: %s", o.Version)
-	node.Appendf("User: %s", helpers.ObfuscatePassword(*o.User))
-	node.Appendf("Password: %s", helpers.ObfuscatePassword(*o.Password))
+	node.Appendf("User: %s", gosettings.ObfuscateKey(*o.User))
+	node.Appendf("Password: %s", gosettings.ObfuscateKey(*o.Password))
 
 	if *o.ConfFile != "" {
 		node.Appendf("Custom configuration file: %s", *o.ConfFile)
@@ -355,16 +354,16 @@ func (o OpenVPN) toLinesNode() (node *gotree.Node) {
 	}
 
 	if *o.Cert != "" {
-		node.Appendf("Client crt: %s", helpers.ObfuscateData(*o.Cert))
+		node.Appendf("Client crt: %s", gosettings.ObfuscateKey(*o.Cert))
 	}
 
 	if *o.Key != "" {
-		node.Appendf("Client key: %s", helpers.ObfuscateData(*o.Key))
+		node.Appendf("Client key: %s", gosettings.ObfuscateKey(*o.Key))
 	}
 
 	if *o.EncryptedKey != "" {
 		node.Appendf("Encrypted key: %s (key passhrapse %s)",
-			helpers.ObfuscateData(*o.EncryptedKey), helpers.ObfuscatePassword(*o.KeyPassphrase))
+			gosettings.ObfuscateKey(*o.EncryptedKey), gosettings.ObfuscateKey(*o.KeyPassphrase))
 	}
 
 	if *o.PIAEncPreset != "" {

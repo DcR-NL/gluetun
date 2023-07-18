@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
+	"net/netip"
 )
 
 var (
@@ -14,22 +14,22 @@ var (
 )
 
 type apiData struct {
-	LogicalServers []logicalServer
+	LogicalServers []logicalServer `json:"LogicalServers"`
 }
 
 type logicalServer struct {
-	Name        string
-	ExitCountry string
-	Region      *string
-	City        *string
-	Servers     []physicalServer
+	Name        string           `json:"Name"`
+	ExitCountry string           `json:"ExitCountry"`
+	Region      *string          `json:"Region"`
+	City        *string          `json:"City"`
+	Servers     []physicalServer `json:"Servers"`
 }
 
 type physicalServer struct {
-	EntryIP net.IP
-	ExitIP  net.IP
-	Domain  string
-	Status  uint8
+	EntryIP netip.Addr `json:"EntryIP"`
+	ExitIP  netip.Addr `json:"ExitIP"`
+	Domain  string     `json:"Domain"`
+	Status  uint8      `json:"Status"`
 }
 
 func fetchAPI(ctx context.Context, client *http.Client) (
@@ -54,7 +54,7 @@ func fetchAPI(ctx context.Context, client *http.Client) (
 
 	decoder := json.NewDecoder(response.Body)
 	if err := decoder.Decode(&data); err != nil {
-		return data, fmt.Errorf("failed unmarshaling response body: %w", err)
+		return data, fmt.Errorf("decoding response body: %w", err)
 	}
 
 	if err := response.Body.Close(); err != nil {

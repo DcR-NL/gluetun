@@ -1,7 +1,17 @@
 package netlink
 
-type NetLink struct{}
+import "github.com/qdm12/log"
 
-func New() *NetLink {
-	return &NetLink{}
+type NetLink struct {
+	debugLogger DebugLogger
+}
+
+func New(debugLogger DebugLogger) *NetLink {
+	return &NetLink{
+		debugLogger: debugLogger,
+	}
+}
+
+func (n *NetLink) PatchLoggerLevel(level log.Level) {
+	n.debugLogger.Patch(log.SetLevel(level))
 }

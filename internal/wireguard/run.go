@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strings"
 
 	"github.com/qdm12/gluetun/internal/netlink"
 	"golang.org/x/sys/unix"
@@ -31,14 +30,35 @@ var (
 	ErrIfaceUp           = errors.New("cannot set the interface to UP")
 	ErrRouteAdd          = errors.New("cannot add route for interface")
 	ErrDeviceWaited      = errors.New("device waited for")
+	ErrKernelSupport     = errors.New("kernel does not support Wireguard")
 )
 
 // See https://git.zx2c4.com/wireguard-go/tree/main.go
 func (w *Wireguard) Run(ctx context.Context, waitError chan<- error, ready chan<- struct{}) {
-	doKernel, err := w.netlink.IsWireguardSupported()
+	kernelSupported, err := w.netlink.IsWireguardSupported()
 	if err != nil {
 		waitError <- fmt.Errorf("%w: %s", ErrDetectKernel, err)
 		return
+	}
+
+	setupFunction := setupUserSpace
+	switch w.settings.Implementation {
+	case "auto": //nolint:goconst
+		if !kernelSupported {
+			w.logger.Info("Using userspace implementation since Kernel support does not exist")
+			break
+		}
+		w.logger.Info("Using available kernelspace implementation")
+		setupFunction = setupKernelSpace
+	case "userspace":
+	case "kernelspace":
+		if !kernelSupported {
+			waitError <- fmt.Errorf("%w", ErrKernelSupport)
+			return
+		}
+		setupFunction = setupKernelSpace
+	default:
+		panic(fmt.Sprintf("unknown implementation %q", w.settings.Implementation))
 	}
 
 	client, err := wgctrl.New()
@@ -52,16 +72,8 @@ func (w *Wireguard) Run(ctx context.Context, waitError chan<- error, ready chan<
 
 	defer closers.cleanup(w.logger)
 
-	setupFunction := setupUserSpace
-	if doKernel {
-		w.logger.Info("Using available kernelspace implementation")
-		setupFunction = setupKernelSpace
-	} else {
-		w.logger.Info("Using userspace implementation since Kernel support does not exist")
-	}
-
 	link, waitAndCleanup, err := setupFunction(ctx,
-		w.settings.InterfaceName, w.netlink, &closers, w.logger)
+		w.settings.InterfaceName, w.netlink, w.settings.MTU, &closers, w.logger)
 	if err != nil {
 		waitError <- err
 		return
@@ -80,15 +92,17 @@ func (w *Wireguard) Run(ctx context.Context, waitError chan<- error, ready chan<
 		return
 	}
 
-	if err := w.netlink.LinkSetUp(link); err != nil {
+	linkIndex, err := w.netlink.LinkSetUp(link)
+	if err != nil {
 		waitError <- fmt.Errorf("%w: %s", ErrIfaceUp, err)
 		return
 	}
+	link.Index = linkIndex
 	closers.add("shutting down link", stepFour, func() error {
 		return w.netlink.LinkSetDown(link)
 	})
 
-	err = w.addRoute(link, allIPv4(), w.settings.FirewallMark)
+	err = w.addRoutes(link, w.settings.AllowedIPs, w.settings.FirewallMark)
 	if err != nil {
 		waitError <- fmt.Errorf("%w: %s", ErrRouteAdd, err)
 		return
@@ -96,11 +110,13 @@ func (w *Wireguard) Run(ctx context.Context, waitError chan<- error, ready chan<
 
 	if *w.settings.IPv6 {
 		// requires net.ipv6.conf.all.disable_ipv6=0
-		err = w.setupIPv6(link, &closers)
+		ruleCleanup6, err := w.addRule(w.settings.RulePriority,
+			w.settings.FirewallMark, unix.AF_INET6)
 		if err != nil {
-			waitError <- fmt.Errorf("setting up IPv6: %w", err)
+			waitError <- fmt.Errorf("adding IPv6 rule: %w", err)
 			return
 		}
+		closers.add("removing IPv6 rule", stepOne, ruleCleanup6)
 	}
 
 	ruleCleanup, err := w.addRule(w.settings.RulePriority,
@@ -111,54 +127,47 @@ func (w *Wireguard) Run(ctx context.Context, waitError chan<- error, ready chan<
 	}
 
 	closers.add("removing IPv4 rule", stepOne, ruleCleanup)
-	w.logger.Info("Wireguard is up")
+	w.logger.Info("Wireguard setup is complete. " +
+		"Note Wireguard is a silent protocol and it may or may not work, without giving any error message. " +
+		"Typically i/o timeout errors indicate the Wireguard connection is not working.")
 	ready <- struct{}{}
 
 	waitError <- waitAndCleanup()
 }
 
-func (w *Wireguard) setupIPv6(link netlink.Link, closers *closers) (err error) {
-	// requires net.ipv6.conf.all.disable_ipv6=0
-	err = w.addRoute(link, allIPv6(), w.settings.FirewallMark)
-	if err != nil {
-		if strings.Contains(err.Error(), "permission denied") {
-			w.logger.Errorf("cannot add route for IPv6 due to a permission denial. "+
-				"Ignoring and continuing execution; "+
-				"Please report to https://github.com/qdm12/gluetun/issues/998 if you find a fix. "+
-				"Full error string: %s", err)
-			return nil
-		}
-		return fmt.Errorf("%w: %s", ErrRouteAdd, err)
-	}
-
-	ruleCleanup6, ruleErr := w.addRule(
-		w.settings.RulePriority, w.settings.FirewallMark,
-		unix.AF_INET6)
-	if ruleErr != nil {
-		return fmt.Errorf("adding IPv6 rule: %w", err)
-	}
-
-	closers.add("removing IPv6 rule", stepOne, ruleCleanup6)
-	return nil
-}
-
 type waitAndCleanupFunc func() error
 
 func setupKernelSpace(ctx context.Context,
-	interfaceName string, netLinker NetLinker,
+	interfaceName string, netLinker NetLinker, mtu uint16,
 	closers *closers, logger Logger) (
 	link netlink.Link, waitAndCleanup waitAndCleanupFunc, err error) {
-	linkAttrs := netlink.LinkAttrs{
+	link = netlink.Link{
+		Type: "wireguard",
 		Name: interfaceName,
-		MTU:  device.DefaultMTU, // TODO
+		MTU:  mtu,
 	}
-	link = &netlink.Wireguard{
-		LinkAttrs: linkAttrs,
-	}
-	err = netLinker.LinkAdd(link)
+	links, err := netLinker.LinkList()
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %s", ErrAddLink, err)
+		return link, nil, fmt.Errorf("listing links: %w", err)
 	}
+
+	// Cleanup any previous Wireguard interface with the same name
+	// See https://github.com/qdm12/gluetun/issues/1669
+	for _, link := range links {
+		if link.Type == "wireguard" && link.Name == interfaceName {
+			err = netLinker.LinkDel(link)
+			if err != nil {
+				return link, nil, fmt.Errorf("deleting previous Wireguard link %s: %w",
+					interfaceName, err)
+			}
+		}
+	}
+
+	linkIndex, err := netLinker.LinkAdd(link)
+	if err != nil {
+		return link, nil, fmt.Errorf("%w: %s", ErrAddLink, err)
+	}
+	link.Index = linkIndex
 	closers.add("deleting link", stepFive, func() error {
 		return netLinker.LinkDel(link)
 	})
@@ -173,27 +182,27 @@ func setupKernelSpace(ctx context.Context,
 }
 
 func setupUserSpace(ctx context.Context,
-	interfaceName string, netLinker NetLinker,
+	interfaceName string, netLinker NetLinker, mtu uint16,
 	closers *closers, logger Logger) (
 	link netlink.Link, waitAndCleanup waitAndCleanupFunc, err error) {
-	tun, err := tun.CreateTUN(interfaceName, device.DefaultMTU)
+	tun, err := tun.CreateTUN(interfaceName, int(mtu))
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %s", ErrCreateTun, err)
+		return link, nil, fmt.Errorf("%w: %s", ErrCreateTun, err)
 	}
 
 	closers.add("closing TUN device", stepSeven, tun.Close)
 
 	tunName, err := tun.Name()
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: cannot get TUN name: %s", ErrCreateTun, err)
+		return link, nil, fmt.Errorf("%w: cannot get TUN name: %s", ErrCreateTun, err)
 	} else if tunName != interfaceName {
-		return nil, nil, fmt.Errorf("%w: names don't match: expected %q and got %q",
+		return link, nil, fmt.Errorf("%w: names don't match: expected %q and got %q",
 			ErrCreateTun, interfaceName, tunName)
 	}
 
 	link, err = netLinker.LinkByName(interfaceName)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %s: %s", ErrFindLink, interfaceName, err)
+		return link, nil, fmt.Errorf("%w: %s: %s", ErrFindLink, interfaceName, err)
 	}
 	closers.add("deleting link", stepFive, func() error {
 		return netLinker.LinkDel(link)
@@ -213,14 +222,14 @@ func setupUserSpace(ctx context.Context,
 
 	uapiFile, err := ipc.UAPIOpen(interfaceName)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %s", ErrUAPISocketOpening, err)
+		return link, nil, fmt.Errorf("%w: %s", ErrUAPISocketOpening, err)
 	}
 
 	closers.add("closing UAPI file", stepThree, uapiFile.Close)
 
 	uapiListener, err := ipc.UAPIListen(interfaceName, uapiFile)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %s", ErrUAPIListen, err)
+		return link, nil, fmt.Errorf("%w: %s", ErrUAPIListen, err)
 	}
 
 	closers.add("closing UAPI listener", stepTwo, uapiListener.Close)
